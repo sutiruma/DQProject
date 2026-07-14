@@ -1,0 +1,155 @@
+version: 1.0.0
+apiVersion: v3.1.0
+kind: DataContract
+id: Bank_contract_001
+name: BANK_transaction_contract
+status: active
+domain: 'Accounting and Finance: Financial Reporting'
+tenant: banking_department
+servers:
+  - server: banking-db
+    type: db2
+    description: DB2 production database for client accounts
+    environment: prod
+    host: 169.44.151.75
+    port: 50000
+    database: BANK
+    schema: BANK1
+    customProperties:
+      - property: database
+        value: BANK
+      - property: schema
+        value: BANK1
+dataProduct: BankingDataProduct
+schema:
+  - name: BANK_CLIENTS
+    physicalName: BANK1/BANK_CLIENTS
+    physicalType: table
+    logicalType: object
+    quality:
+      - name: table_row_count
+        type: sql
+        query: SELECT * FROM BANK1.BANK_CLIENTS;
+        mustBe: 5112
+        dimension: completeness
+      - name: Marital status inconsistent with age
+        type: sql
+        query: >-
+          SELECT AGE, MARITAL_STATUS FROM BANK1.BANK_CLIENTS WHERE AGE < 16 AND
+          MARITAL_STATUS IN ('married','divorced','widowed');
+        mustBeLessThan: 5
+      - name: Contact preference but no phone number
+        type: sql
+        query: SELECT * FROM BANK1.BANK_CLIENTS WHERE REGEXP_LIKE(PHONE1, '[0-9]');
+        dimension: conformity
+        mustBeLessThan: 5220
+    properties:
+      - name: ACCOUNT_ID
+        physicalName: ACCOUNT_ID
+        logicalType: string
+        quality:
+          - name: Null Value Check for CCN
+            type: sql
+            query: SELECT * FROM BANK1.BANK_CLIENTS WHERE CCN IS NULL;
+            dimension: accuracy
+            mustBeGreaterThan: 200
+          - name: Missing Values for Customer IDs
+            type: library
+            metric: missingValues
+            arguments:
+              missingValues:
+                - ''
+                - n/a
+                - N/A
+                - 'null'
+                - 'NULL'
+            mustBeLessThan: 5
+          - name: Duplicate customer IDs via library check
+            type: library
+            metric: duplicateValues
+            mustBe: 2
+        primaryKey: false
+        unique: true
+        required: true
+      - name: ZIP
+        physicalName: ZIP
+        logicalType: string
+        quality:
+          - name: Invalid ZIP format
+            type: sql
+            query: >-
+              SELECT ZIP FROM BANK1.BANK_CLIENTS WHERE ZIP IS NOT NULL AND NOT
+              REGEXP_LIKE(TRIM(ZIP),'^[0-9]{5}$');
+            mustBeLessThan: 3005
+          - name: Invalid ZIP format via Library check
+            type: library
+            metric: invalidValues
+            arguments:
+              pattern: ^[0-9]{5}$
+            mustBeLessThan: 2995
+        primaryKey: false
+        unique: true
+        required: true
+      - name: AGE
+        physicalName: AGE
+        logicalType: string
+        quality:
+          - name: Implausible customer ages
+            type: sql
+            query: >-
+              SELECT AGE FROM BANK1.BANK_CLIENTS WHERE AGE IS NULL OR AGE < 18
+              OR AGE > 100;
+            mustBeLessThan: 389
+        primaryKey: false
+        unique: true
+        required: true
+      - name: EMAIL
+        physicalName: EMAIL
+        logicalType: string
+        quality:
+          - name: Invalid email address format
+            type: sql
+            query: >-
+              SELECT EMAIL FROM BANK1.BANK_CLIENTS WHERE EMAIL IS NOT NULL AND
+              NOT
+              REGEXP_LIKE(TRIM(EMAIL),'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$');
+            mustBeLessThan: 5
+        primaryKey: false
+        unique: true
+        required: true
+      - name: GENDER
+        physicalName: GENDER
+        logicalType: string
+        quality:
+          - name: Invalid gender
+            type: sql
+            query: >-
+              SELECT GENDER FROM BANK1.BANK_CLIENTS WHERE GENDER NOT IN
+              ('L','F');
+            mustBeLessThan: 3540
+          - name: Invalid gender via library check
+            type: library
+            metric: invalidValues
+            arguments:
+              validValues:
+                - M
+                - B
+            mustBeLessThan: 5119
+        primaryKey: false
+        unique: true
+        required: true
+      - name: MARITAL_STATUS
+        physicalName: MARITAL_STATUS
+        logicalType: string
+        quality:
+          - name: Invalid marital status codes
+            type: sql
+            query: >-
+              SELECT MARITAL_STATUS FROM BANK1.BANK_CLIENTS WHERE MARITAL_STATUS
+              NOT IN ('single','married','divorced','separated','unknown');
+            mustBeBetween:
+              - 765
+              - 890
+        primaryKey: false
+        unique: true
+        required: true
