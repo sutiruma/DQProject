@@ -1,6 +1,9 @@
 name: Data Contract Validation & Test
 
 on:
+  push:
+    branches-ignore: [main]
+    paths: ['contracts/**']
   pull_request:
     paths: ['contracts/**']
   pull_request_target:
@@ -28,7 +31,7 @@ jobs:
 
   # ── Main validation + test job ────────────────────────────────────────────
   validate-and-test:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       CPD_URL:        ${{ secrets.CPD_URL }}
@@ -91,9 +94,9 @@ jobs:
             fi
           done
 
-          echo "body_val<> $GITHUB_OUTPUT
+          echo "body_val<<EOF" >> $GITHUB_OUTPUT
           printf "%b" "$RESULT_MD" >> $GITHUB_OUTPUT
-          echo "EOF"             >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "overall=$OVERALL" >> $GITHUB_OUTPUT
 
       # Post validation-only comment early so user sees it immediately
@@ -226,9 +229,9 @@ jobs:
 
           done < /tmp/contract_ids.txt
 
-          echo "body_test<> $GITHUB_OUTPUT
-          printf "%b" "$TEST_MD"   >> $GITHUB_OUTPUT
-          echo "EOF"               >> $GITHUB_OUTPUT
+          echo "body_test<<EOF" >> $GITHUB_OUTPUT
+          printf "%b" "$TEST_MD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "test_overall=$TEST_OVERALL" >> $GITHUB_OUTPUT
 
       # ── FINAL COMMENT: validation + test combined ─────────────────────────
