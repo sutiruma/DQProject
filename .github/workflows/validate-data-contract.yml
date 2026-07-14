@@ -1,0 +1,247 @@
+name: Data Contract Validation & Test
+
+on:
+  pull_request:
+    paths: ['contracts/**']
+  pull_request_target:
+    types: [closed]      # cleanup on PR close
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  # ── Cleanup job: runs only when PR is merged/closed ──────────────────────
+  cleanup:
+    if: github.event_name == 'pull_request_target' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete transient PR contracts
+        env:
+          CPD_URL:        ${{ secrets.CPD_URL }}
+          CPD_TOKEN:      ${{ secrets.CPD_TOKEN }}
+          CPD_PROJECT_ID: ${{ secrets.CPD_PROJECT_ID }}
+        run: |
+          # Read contract IDs written by a previous run (stored as PR comment footer or cache)
+          echo "Cleanup: remove ephemeral contracts if PR was not merged"
+          # Implementation: query GET /data_contracts and delete any with name matching PR branch
+
+  # ── Main validation + test job ────────────────────────────────────────────
+  validate-and-test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CPD_URL:        ${{ secrets.CPD_URL }}
+      CPD_TOKEN:      ${{ secrets.CPD_TOKEN }}
+      CPD_PROJECT_ID: ${{ secrets.CPD_PROJECT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find changed contract files
+        id: changed
+        uses: tj-actions/changed-files@v44
+        with:
+          files: 'contracts/**'
+
+      - name: Find previous bot comment (for upsert)
+        id: find-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: ''
+
+      # ── STAGE 1: VALIDATE ─────────────────────────────────────────────────
+      - name: Validate contracts
+        id: validate
+        run: |
+          RESULT_MD="\n## 🔍 Data Contract Validation\n\n"
+          OVERALL=0
+
+          for f in ${{ steps.changed.outputs.all_changed_files }}; do
+            CONTENT=$(cat "$f")
+            CONTENT_TYPE="application/x-yaml"
+            [[ "$f" == *.json ]] && CONTENT_TYPE="application/json"
+
+            curl -s -o /tmp/val_resp.json \
+              -X POST "${CPD_URL}/data_quality/v4/projects/${CPD_PROJECT_ID}/data_contracts_validation" \
+              -H "Authorization: Bearer ${CPD_TOKEN}" \
+              -H "Content-Type: ${CONTENT_TYPE}" \
+              --data-raw "${CONTENT}"
+
+            VALID=$(jq -r '.valid' /tmp/val_resp.json)
+            ERR_COUNT=$(jq -r '.error_count // 0' /tmp/val_resp.json)
+
+            if [[ "$VALID" == "true" ]]; then
+              RESULT_MD+="### ✅ \`$f\` — schema valid\n\n"
+              echo "${f}=VALID" >> /tmp/file_status.txt
+            else
+              OVERALL=1
+              RESULT_MD+="### ❌ \`$f\` — $ERR_COUNT schema error(s)\n\n"
+              RESULT_MD+="| Field | Message | Type |\n|---|---|---|\n"
+              while IFS= read -r row; do
+                PROP=$(echo "$row" | jq -r '.property')
+                MSG=$(echo  "$row" | jq -r '.message')
+                TYP=$(echo  "$row" | jq -r '.type')
+                RESULT_MD+="| \`$PROP\` | $MSG | $TYP |\n"
+              done < <(jq -c '.errors[]' /tmp/val_resp.json)
+              RESULT_MD+="\n"
+              echo "${f}=INVALID" >> /tmp/file_status.txt
+            fi
+          done
+
+          echo "body_val<> $GITHUB_OUTPUT
+          printf "%b" "$RESULT_MD" >> $GITHUB_OUTPUT
+          echo "EOF"             >> $GITHUB_OUTPUT
+          echo "overall=$OVERALL" >> $GITHUB_OUTPUT
+
+      # Post validation-only comment early so user sees it immediately
+      - name: Post interim comment (validation result)
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.validate.outputs.body_val }}
+          edit-mode: replace
+
+      - name: Stop if validation failed
+        if: steps.validate.outputs.overall == '1'
+        run: exit 1
+
+      # ── STAGE 2: CREATE ───────────────────────────────────────────────────
+      - name: Create / update contracts
+        id: create
+        run: |
+          declare -A CONTRACT_IDS
+
+          for f in ${{ steps.changed.outputs.all_changed_files }}; do
+            NAME=$(basename "$f" | sed 's/\.[^.]*$//')   # filename without extension
+            CONTENT=$(cat "$f")
+
+            # Check if contract already exists by name
+            EXISTING=$(curl -s \
+              "${CPD_URL}/data_quality/v4/projects/${CPD_PROJECT_ID}/data_contracts" \
+              -H "Authorization: Bearer ${CPD_TOKEN}" | \
+              jq -r --arg n "$NAME" '.data_contracts[] | select(.name==$n) | .id' | head -1)
+
+            if [[ -n "$EXISTING" ]]; then
+              # Update existing contract
+              curl -s -o /tmp/create_resp.json \
+                -X POST \
+                "${CPD_URL}/data_quality/v4/projects/${CPD_PROJECT_ID}/data_contracts_upload" \
+                -H "Authorization: Bearer ${CPD_TOKEN}" \
+                -F "file=@$f" \
+                -F "name=$NAME" \
+                -F "data_contract_id=$EXISTING" \
+                -F "validate=false"
+            else
+              # Create new contract — pass validate=false (already validated in stage 1)
+              CONTENT_TYPE="application/x-yaml"
+              [[ "$f" == *.json ]] && CONTENT_TYPE="application/json"
+              curl -s -o /tmp/create_resp.json \
+                -X POST \
+                "${CPD_URL}/data_quality/v4/projects/${CPD_PROJECT_ID}/data_contracts?validate=false" \
+                -H "Authorization: Bearer ${CPD_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "{\"name\":\"$NAME\",\"contract_yaml\":$(jq -Rs . < "$f")}"
+            fi
+
+            CID=$(jq -r '.id' /tmp/create_resp.json)
+            echo "${f}:${CID}" >> /tmp/contract_ids.txt
+          done
+
+      # ── STAGE 3: TEST & POLL ──────────────────────────────────────────────
+      - name: Trigger and poll test runs
+        id: test
+        run: |
+          TEST_MD="\n---\n## 🧪 Data Contract Test Run\n\n"
+          TEST_OVERALL=0
+          MAX_POLLS=30
+          POLL_INTERVAL=10
+
+          while IFS=: read -r FILE CID; do
+            NAME=$(basename "$FILE" | sed 's/\.[^.]*$//')
+
+            # Trigger test (server_mappings[] from project settings are used by default)
+            curl -s -o /tmp/test_resp.json \
+              -X POST \
+              "${CPD_URL}/data_quality/v4/projects/${CPD_PROJECT_ID}/data_contracts/${CID}/test" \
+              -H "Authorization: Bearer ${CPD_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data '{"retain_dq_objects": false}'
+
+            TEST_RUN_ID=$(jq -r '.id' /tmp/test_resp.json)
+
+            # Poll until terminal status
+            for i in $(seq 1 $MAX_POLLS); do
+              curl -s -o /tmp/result.json \
+                "${CPD_URL}/data_quality/v4/projects/${CPD_PROJECT_ID}/data_contracts/${CID}/test_results/${TEST_RUN_ID}" \
+                -H "Authorization: Bearer ${CPD_TOKEN}"
+              STATUS=$(jq -r '.status' /tmp/result.json)
+              [[ "$STATUS" == "completed" || "$STATUS" == "failed" ]] && break
+              sleep $POLL_INTERVAL
+            done
+
+            START=$(jq -r '.start'    /tmp/result.json)
+            END=$(jq -r   '.end'      /tmp/result.json)
+            RUN_BY=$(jq -r '.run_by'  /tmp/result.json)
+
+            if [[ "$STATUS" == "completed" ]]; then
+              TEST_MD+="### ✅ \`$NAME\` — test completed\n"
+            else
+              TEST_OVERALL=1
+              TEST_MD+="### ❌ \`$NAME\` — test **$STATUS**\n"
+            fi
+
+            TEST_MD+="> Run ID: \`${TEST_RUN_ID}\` | Started: ${START} | Ended: ${END} | Run by: ${RUN_BY}\n\n"
+
+            # Check results table (if any)
+            CHECK_COUNT=$(jq '.check_results | length' /tmp/result.json)
+            if [[ "$CHECK_COUNT" -gt 0 ]]; then
+              TEST_MD+="**Check Results**\n\n"
+              TEST_MD+="| Rule | Dataset | Field | Status | Tested | Passed | Failed |\n"
+              TEST_MD+="|---|---|---|---|---|---|---|\n"
+              while IFS= read -r row; do
+                RULE=$(echo    "$row" | jq -r '.data_quality_rule.name // "-"')
+                DS=$(echo      "$row" | jq -r '.dataset.name           // "-"')
+                FIELD=$(echo   "$row" | jq -r '.dataset.field          // "-"')
+                CSTATUS=$(echo "$row" | jq -r '.status')
+                TESTED=$(echo  "$row" | jq -r '.tested_record_count   // "-"')
+                PASSED=$(echo  "$row" | jq -r '.passed_record_count   // "-"')
+                FAILED=$(echo  "$row" | jq -r '.failed_record_count   // "-"')
+                TEST_MD+="| $RULE | $DS | $FIELD | \`$CSTATUS\` | $TESTED | $PASSED | $FAILED |\n"
+              done < <(jq -c '.check_results[]' /tmp/result.json)
+              TEST_MD+="\n"
+            fi
+
+            # Error logs (warnings/errors only, cap at 10 lines)
+            LOG_ERRORS=$(jq '[.logs[] | select(.level=="error" or .level=="warn")]' /tmp/result.json)
+            LOG_COUNT=$(echo "$LOG_ERRORS" | jq 'length')
+            if [[ "$LOG_COUNT" -gt 0 ]]; then
+              TEST_MD+="
+⚠️ $LOG_COUNT log message(s)
+\n\n"
+            fi
+
+          done < /tmp/contract_ids.txt
+
+          echo "body_test<> $GITHUB_OUTPUT
+          printf "%b" "$TEST_MD"   >> $GITHUB_OUTPUT
+          echo "EOF"               >> $GITHUB_OUTPUT
+          echo "test_overall=$TEST_OVERALL" >> $GITHUB_OUTPUT
+
+      # ── FINAL COMMENT: validation + test combined ─────────────────────────
+      - name: Upsert final PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ${{ steps.validate.outputs.body_val }}
+            ${{ steps.test.outputs.body_test }}
+          edit-mode: replace
+
+      - name: Fail if test run failed
+        if: steps.test.outputs.test_overall == '1'
+        run: exit 1
