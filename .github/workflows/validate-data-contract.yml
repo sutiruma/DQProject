@@ -3,9 +3,13 @@ name: Data Contract Validation & Test
 on:
   push:
     branches-ignore: [main]
-    paths: ['contracts/**']
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/validate-data-contract.yml'
   pull_request:
-    paths: ['contracts/**']
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/validate-data-contract.yml'
   pull_request_target:
     types: [closed]      # cleanup on PR close
 
