@@ -20,7 +20,7 @@ permissions:
 jobs:
   # ── Cleanup job: runs only when PR is merged/closed ──────────────────────
   cleanup:
-    if: github.event_name == 'pull_request_target' && github.event.action == 'closed'
+    if: ${{ github.event_name == 'pull_request_target' && github.event.action == 'closed' }}
     runs-on: ubuntu-latest
     steps:
       - name: Delete transient PR contracts
@@ -35,7 +35,7 @@ jobs:
 
   # ── Main validation + test job ────────────────────────────────────────────
   validate-and-test:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     env:
       CPD_URL:        ${{ secrets.CPD_URL }}
