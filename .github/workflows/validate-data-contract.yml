@@ -206,12 +206,30 @@ jobs:
                   print(f"WARNING: contract '{name}' not found — skipping test", file=sys.stderr)
                   continue
 
-              # Trigger test run
-              test_resp = provider.test_project_data_contract(
-                  project_id, dc.id, DataContractTestRequest(retain_dq_objects=False)
+              # Trigger test run — dump raw response to diagnose id field name
+              import urllib3, json as _json
+              urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+              _raw = provider.session.post(
+                  f"{os.environ['URL']}/data_quality/v4/projects/{project_id}/data_contracts/{dc.id}/test",
+                  headers={"Authorization": bearer, "Content-Type": "application/json"},
+                  data=DataContractTestRequest(retain_dq_objects=False).model_dump_json(exclude_none=True),
+                  verify=False,
               )
-              run_id = test_resp.id
+              print(f"DEBUG test trigger raw response: {_raw.status_code} {_raw.text[:500]}", file=sys.stderr)
+              _resp_json = _raw.json()
+              # Try multiple candidate fields for the run ID
+              run_id = (
+                  _resp_json.get("id")
+                  or _resp_json.get("run_id")
+                  or _resp_json.get("test_run_id")
+                  or (_resp_json.get("metadata") or {}).get("asset_id")
+              )
               print(f"Triggered test for {name}  run_id={run_id}")
+              if not run_id:
+                  print(f"WARNING: could not extract run_id for '{name}' — skipping poll", file=sys.stderr)
+                  check_overall = 1
+                  check_md += f"### ❌ `{name}` — test trigger returned no run ID\n\n"
+                  continue
 
               # Poll until terminal status
               result = None
