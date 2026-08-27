@@ -26,7 +26,7 @@ from wxdi.data_contracts import DataContractsProvider
 from wxdi.data_contracts.models import DataContractValidationRequest
 from wxdi.dq_validator.provider.config import ProviderConfig
 
-IAM_TOKEN_URL = "https://iam.cloud.ibm.com/identity/token"
+IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
 
 def get_bearer_token(api_key: str) -> str:
