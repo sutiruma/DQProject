@@ -13,7 +13,6 @@ servers:
     host: 169.44.151.75
     port: 50000
     database: BANK
-    schema: BANK1
     customProperties:
       - property: database
         value: BANK
@@ -22,7 +21,6 @@ servers:
 dataProduct: BankingDataProduct
 schema:
   - name: BANK_CLIENTS
-    physicalName: BANK1/BANK_CLIENTS
     physicalType: table
     logicalType: object
     quality:
@@ -44,7 +42,6 @@ schema:
         mustBeLessThan: 5220
     properties:
       - name: ACCOUNT_ID
-        physicalName: ACCOUNT_ID
         logicalType: string
         quality:
           - name: Null Value Check for CCN
