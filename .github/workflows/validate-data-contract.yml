@@ -19,7 +19,7 @@ permissions:
 
 env:
   URL:        ${{ secrets.URL }}
-  TOKEN:      ${{ secrets.TOKEN }}
+  API_KEY:    ${{ secrets.API_KEY }}
   PROJECT_ID: ${{ secrets.PROJECT_ID }}
 
 jobs:
@@ -41,11 +41,15 @@ jobs:
         run: |
           echo "Cleanup: removing ephemeral contracts for PR #${{ github.event.pull_request.number }}"
           python3 -c "
-          import os
+          import os, requests
           from wxdi.data_contracts import DataContractsProvider
           from wxdi.dq_validator.provider.config import ProviderConfig
-          token = os.environ['TOKEN']
-          bearer = token if token.startswith('Bearer ') else f'Bearer {token}'
+          resp = requests.post('https://iam.test.cloud.ibm.com/identity/token',
+              headers={'Content-Type': 'application/x-www-form-urlencoded'},
+              data={'grant_type': 'urn:ibm:params:oauth:grant-type:apikey', 'apikey': os.environ['API_KEY']},
+              timeout=30)
+          resp.raise_for_status()
+          bearer = 'Bearer ' + resp.json()['access_token']
           config = ProviderConfig(url=os.environ['URL'], auth_token=bearer)
           provider = DataContractsProvider(config)
           pr = '${{ github.event.pull_request.number }}'
@@ -125,13 +129,17 @@ jobs:
         id: publish
         run: |
           python3 - <<'PYEOF'
-          import os, sys
+          import os, sys, requests
           from wxdi.data_contracts import DataContractsProvider
           from wxdi.data_contracts.models import DataContractPrototypeYaml
           from wxdi.dq_validator.provider.config import ProviderConfig
 
-          token = os.environ["TOKEN"]
-          bearer = token if token.startswith("Bearer ") else f"Bearer {token}"
+          resp = requests.post("https://iam.cloud.ibm.com/identity/token",
+              headers={"Content-Type": "application/x-www-form-urlencoded"},
+              data={"grant_type": "urn:ibm:params:oauth:grant-type:apikey", "apikey": os.environ["API_KEY"]},
+              timeout=30)
+          resp.raise_for_status()
+          bearer = "Bearer " + resp.json()["access_token"]
           config = ProviderConfig(url=os.environ["URL"], auth_token=bearer)
           provider = DataContractsProvider(config)
           project_id = os.environ["PROJECT_ID"]
@@ -164,14 +172,18 @@ jobs:
         id: check
         run: |
           python3 - <<'PYEOF'
-          import os, sys, time
+          import os, sys, time, requests
 
           from wxdi.data_contracts import DataContractsProvider
           from wxdi.data_contracts.models import DataContractTestRequest
           from wxdi.dq_validator.provider.config import ProviderConfig
 
-          token = os.environ["TOKEN"]
-          bearer = token if token.startswith("Bearer ") else f"Bearer {token}"
+          resp = requests.post("https://iam.cloud.ibm.com/identity/token",
+              headers={"Content-Type": "application/x-www-form-urlencoded"},
+              data={"grant_type": "urn:ibm:params:oauth:grant-type:apikey", "apikey": os.environ["API_KEY"]},
+              timeout=30)
+          resp.raise_for_status()
+          bearer = "Bearer " + resp.json()["access_token"]
           config = ProviderConfig(url=os.environ["URL"], auth_token=bearer)
           provider = DataContractsProvider(config)
           project_id = os.environ["PROJECT_ID"]
