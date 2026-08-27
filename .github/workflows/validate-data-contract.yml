@@ -1,4 +1,4 @@
-name: Data Contract Validation & Test
+name: Data Contract Validation
 
 on:
   push:
@@ -10,8 +10,6 @@ on:
     paths:
       - 'contracts/**'
       - '.github/workflows/validate-data-contract.yml'
-  pull_request_target:
-    types: [closed]      # cleanup on PR close
 
 permissions:
   pull-requests: write
@@ -23,45 +21,7 @@ env:
   PROJECT_ID: ${{ secrets.PROJECT_ID }}
 
 jobs:
-  # ── Cleanup job: runs only when PR is merged/closed ──────────────────────
-  cleanup:
-    if: ${{ github.event_name == 'pull_request_target' && github.event.action == 'closed' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install data-intelligence-sdk
-        run: |
-          pip install \
-            --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
-            "data-intelligence-sdk==2.2.0rc1"
-
-      - name: Deregister transient PR contracts
-        run: |
-          echo "Cleanup: removing ephemeral contracts for PR #${{ github.event.pull_request.number }}"
-          python3 -c "
-          import os, requests
-          from wxdi.data_contracts import DataContractsProvider
-          from wxdi.dq_validator.provider.config import ProviderConfig
-          resp = requests.post('https://iam.test.cloud.ibm.com/identity/token',
-              headers={'Content-Type': 'application/x-www-form-urlencoded'},
-              data={'grant_type': 'urn:ibm:params:oauth:grant-type:apikey', 'apikey': os.environ['API_KEY']},
-              timeout=30)
-          resp.raise_for_status()
-          bearer = 'Bearer ' + resp.json()['access_token']
-          config = ProviderConfig(url=os.environ['URL'], auth_token=bearer)
-          provider = DataContractsProvider(config)
-          pr = '${{ github.event.pull_request.number }}'
-          result = provider.list_project_data_contracts(os.environ['PROJECT_ID'])
-          for dc in result.data_contracts:
-              if dc.name and f'pr-{pr}' in (dc.name or ''):
-                  provider.delete_project_data_contracts(os.environ['PROJECT_ID'], data_contract_ids=dc.id)
-                  print(f'Deleted contract {dc.id} ({dc.name})')
-          " || true
-
-  # ── Main validation + publish + asset-check job ───────────────────────────
-  validate-and-test:
+  validate:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
 
@@ -74,7 +34,6 @@ jobs:
         with:
           files: 'contracts/**'
 
-      # ── INSTALL ───────────────────────────────────────────────────────────
       - name: Install data-intelligence-sdk
         run: |
           pip install \
@@ -82,7 +41,6 @@ jobs:
             --extra-index-url https://pypi.org/simple/ \
             "data-intelligence-sdk==2.2.0rc1"
 
-      # ── STAGE 1: VALIDATE ─────────────────────────────────────────────────
       - name: Validate contracts
         id: validate
         run: |
@@ -92,7 +50,7 @@ jobs:
           for f in ${{ steps.changed.outputs.all_changed_files }}; do
             echo "Validating $f ..."
             if python3 .github/scripts/validate_contract.py "$f" > /tmp/val_out.txt 2>&1; then
-              RESULT_MD+="### ✅ \`$f\` — schema valid\n\n"
+              RESULT_MD+="### ✅ \`$f\` — valid\n\n"
             else
               OVERALL=1
               ERRORS=$(cat /tmp/val_out.txt)
@@ -100,19 +58,18 @@ jobs:
             fi
           done
 
-          echo "body_val<<EOF" >> $GITHUB_OUTPUT
+          echo "body<<EOF" >> $GITHUB_OUTPUT
           printf "%b" "$RESULT_MD" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "overall=$OVERALL" >> $GITHUB_OUTPUT
 
-      # Post interim comment immediately so the author sees validation status
-      - name: Post interim PR comment (validation result)
+      - name: Post PR comment
         if: ${{ github.event_name == 'pull_request' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BODY_VAL: ${{ steps.validate.outputs.body_val }}
+          BODY: ${{ steps.validate.outputs.body }}
         run: |
-          printf "%b" "$BODY_VAL" > /tmp/pr_body.md
+          printf "%b" "$BODY" > /tmp/pr_body.md
           gh pr comment "${{ github.event.pull_request.number }}" \
             --body-file /tmp/pr_body.md \
             --repo "${{ github.repository }}" \
@@ -121,175 +78,6 @@ jobs:
             --body-file /tmp/pr_body.md \
             --repo "${{ github.repository }}"
 
-      - name: Stop if validation failed
+      - name: Fail if validation failed
         if: steps.validate.outputs.overall == '1'
-        run: exit 1
-
-      # ── STAGE 2: CREATE / UPDATE ──────────────────────────────────────────
-      - name: Create or update contracts
-        id: publish
-        run: |
-          python3 - <<'PYEOF'
-          import os, sys, requests
-          from wxdi.data_contracts import DataContractsProvider
-          from wxdi.data_contracts.models import DataContractPrototypeYaml
-          from wxdi.dq_validator.provider.config import ProviderConfig
-
-          resp = requests.post("https://iam.test.cloud.ibm.com/identity/token",
-              headers={"Content-Type": "application/x-www-form-urlencoded"},
-              data={"grant_type": "urn:ibm:params:oauth:grant-type:apikey", "apikey": os.environ["API_KEY"]},
-              timeout=30)
-          resp.raise_for_status()
-          bearer = "Bearer " + resp.json()["access_token"]
-          config = ProviderConfig(url=os.environ["URL"], auth_token=bearer)
-          provider = DataContractsProvider(config)
-          project_id = os.environ["PROJECT_ID"]
-
-          files = "${{ steps.changed.outputs.all_changed_files }}".split()
-          for f in files:
-              name = os.path.splitext(os.path.basename(f))[0]
-              with open(f, "r", encoding="utf-8") as fh:
-                  content = fh.read()
-
-              # Check if a contract with this name already exists
-              collection = provider.list_project_data_contracts(project_id, limit=200)
-              existing = next((dc for dc in collection.data_contracts if dc.name == name), None)
-
-              body = DataContractPrototypeYaml(name=name, contract_yaml=content)
-              if existing:
-                  contract = provider.replace_project_data_contract(
-                      project_id, existing.id, body, validate=False
-                  )
-                  print(f"Updated  {f}  →  id={contract.id}")
-              else:
-                  contract = provider.create_project_data_contract(
-                      project_id, body, validate=False
-                  )
-                  print(f"Created  {f}  →  id={contract.id}")
-          PYEOF
-
-      # ── STAGE 3: TEST & POLL ──────────────────────────────────────────────
-      - name: Trigger and poll test runs
-        id: check
-        run: |
-          python3 - <<'PYEOF'
-          import os, sys, time, requests
-
-          from wxdi.data_contracts import DataContractsProvider
-          from wxdi.data_contracts.models import DataContractTestRequest
-          from wxdi.dq_validator.provider.config import ProviderConfig
-
-          resp = requests.post("https://iam.test.cloud.ibm.com/identity/token",
-              headers={"Content-Type": "application/x-www-form-urlencoded"},
-              data={"grant_type": "urn:ibm:params:oauth:grant-type:apikey", "apikey": os.environ["API_KEY"]},
-              timeout=30)
-          resp.raise_for_status()
-          bearer = "Bearer " + resp.json()["access_token"]
-          config = ProviderConfig(url=os.environ["URL"], auth_token=bearer)
-          provider = DataContractsProvider(config)
-          project_id = os.environ["PROJECT_ID"]
-
-          MAX_POLLS = 30
-          POLL_INTERVAL = 10
-
-          check_md = "---\n## 🧪 Data Contract Test Run\n\n"
-          check_overall = 0
-
-          files = "${{ steps.changed.outputs.all_changed_files }}".split()
-          for f in files:
-              name = os.path.splitext(os.path.basename(f))[0]
-
-              # Resolve contract ID by name
-              collection = provider.list_project_data_contracts(project_id, limit=200)
-              dc = next((c for c in collection.data_contracts if c.name == name), None)
-              if dc is None:
-                  print(f"WARNING: contract '{name}' not found — skipping test", file=sys.stderr)
-                  continue
-
-              # Trigger test run — dump raw response to diagnose id field name
-              import urllib3, json as _json
-              urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-              _raw = provider.session.post(
-                  f"{os.environ['URL']}/data_quality/v4/projects/{project_id}/data_contracts/{dc.id}/test",
-                  headers={"Authorization": bearer, "Content-Type": "application/json"},
-                  data=DataContractTestRequest(retain_dq_objects=False).model_dump_json(exclude_none=True),
-                  verify=False,
-              )
-              print(f"DEBUG test trigger raw response: {_raw.status_code} {_raw.text[:500]}", file=sys.stderr)
-              _resp_json = _raw.json()
-              # Try multiple candidate fields for the run ID
-              run_id = (
-                  _resp_json.get("id")
-                  or _resp_json.get("run_id")
-                  or _resp_json.get("test_run_id")
-                  or (_resp_json.get("metadata") or {}).get("asset_id")
-              )
-              print(f"Triggered test for {name}  run_id={run_id}")
-              if not run_id:
-                  print(f"WARNING: could not extract run_id for '{name}' — skipping poll", file=sys.stderr)
-                  check_overall = 1
-                  check_md += f"### ❌ `{name}` — test trigger returned no run ID\n\n"
-                  continue
-
-              # Poll until terminal status
-              result = None
-              for _ in range(MAX_POLLS):
-                  result = provider.get_project_data_contract_test_result(
-                      project_id, dc.id, run_id, include_all_details=True
-                  )
-                  if result.status in ("completed", "failed"):
-                      break
-                  time.sleep(POLL_INTERVAL)
-
-              status = result.status if result else "unknown"
-              start  = result.start  if result else "-"
-              end    = result.end    if result else "-"
-              run_by = result.run_by if result else "-"
-
-              if status == "completed":
-                  check_md += f"### ✅ `{name}` — test completed\n"
-              else:
-                  check_overall = 1
-                  check_md += f"### ❌ `{name}` — test **{status}**\n"
-
-              check_md += f"> Run ID: `{run_id}` | Started: {start} | Ended: {end} | Run by: {run_by}\n\n"
-
-              if result and result.check_results:
-                  check_md += "**Check Results**\n\n"
-                  check_md += "| Rule | Status | Passed |\n|---|---|---|\n"
-                  for cr in result.check_results:
-                      check_md += f"| {cr.check_name or '-'} | `{cr.status or '-'}` | {cr.passed} |\n"
-                  check_md += "\n"
-
-              warn_logs = [l for l in (result.logs if result else []) if l.level in ("error", "warn")]
-              if warn_logs:
-                  check_md += f"⚠️ {len(warn_logs)} log message(s)\n\n"
-
-          # Write outputs
-          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
-              out.write("body_check<<EOF\n")
-              out.write(check_md + "\n")
-              out.write("EOF\n")
-              out.write(f"check_overall={check_overall}\n")
-          PYEOF
-
-      # ── FINAL COMMENT: validation + asset check combined ──────────────────
-      - name: Upsert final PR comment
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BODY_VAL:   ${{ steps.validate.outputs.body_val }}
-          BODY_CHECK: ${{ steps.check.outputs.body_check }}
-        run: |
-          printf "%b\n%b" "$BODY_VAL" "$BODY_CHECK" > /tmp/pr_body.md
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --body-file /tmp/pr_body.md \
-            --repo "${{ github.repository }}" \
-            --edit-last 2>/dev/null || \
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --body-file /tmp/pr_body.md \
-            --repo "${{ github.repository }}"
-
-      - name: Fail if asset check failed
-        if: steps.check.outputs.check_overall == '1'
         run: exit 1
