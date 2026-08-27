@@ -1,11 +1,6 @@
 name: Data Contract Validation
 
 on:
-  push:
-    branches-ignore: [main]
-    paths:
-      - 'contracts/**'
-      - '.github/workflows/validate-data-contract.yml'
   pull_request:
     paths:
       - 'contracts/**'
@@ -22,7 +17,7 @@ env:
 
 jobs:
   validate:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -70,10 +65,6 @@ jobs:
           BODY: ${{ steps.validate.outputs.body }}
         run: |
           printf "%b" "$BODY" > /tmp/pr_body.md
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --body-file /tmp/pr_body.md \
-            --repo "${{ github.repository }}" \
-            --edit-last 2>/dev/null || \
           gh pr comment "${{ github.event.pull_request.number }}" \
             --body-file /tmp/pr_body.md \
             --repo "${{ github.repository }}"
