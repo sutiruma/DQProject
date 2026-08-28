@@ -1,3 +1,8 @@
+# NOTE: This workflow uses workflow_run which only fires for workflow files
+# present on the default branch (main). The create logic lives in
+# validate-data-contract.yml as a second job (needs: validate) while
+# this PR is open. Once merged to main, this file will take over.
+
 name: Data Contract Create
 
 on:
@@ -30,7 +35,7 @@ jobs:
         uses: tj-actions/changed-files@v44
         with:
           files: 'contracts/**'
-          base_sha: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.base_sha || '' }}
+          base_sha: ${{ github.event.workflow_run.base_sha }}
           sha: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install data-intelligence-sdk
@@ -65,8 +70,8 @@ jobs:
           resp.raise_for_status()
           bearer = "Bearer " + resp.json()["access_token"]
 
-          config   = ProviderConfig(url=os.environ["URL"], auth_token=bearer)
-          provider = DataContractsProvider(config)
+          config     = ProviderConfig(url=os.environ["URL"], auth_token=bearer)
+          provider   = DataContractsProvider(config)
           project_id = os.environ["PROJECT_ID"]
 
           files = "${{ steps.changed.outputs.all_changed_files }}".split()
@@ -97,7 +102,6 @@ jobs:
                   result_lines.append(f"### ✅ `{f}` — created (id: `{contract.id}`)")
                   print(f"Created  {f}  →  id={contract.id}")
 
-          # Write summary to GITHUB_OUTPUT for the PR comment step
           md = "## 📦 Data Contract Create\n\n" + "\n\n".join(result_lines) + "\n"
           with open(os.environ["GITHUB_OUTPUT"], "a") as out:
               out.write("body<<EOF\n")
@@ -106,7 +110,7 @@ jobs:
           PYEOF
 
       - name: Post PR comment (success)
-        if: ${{ success() && github.event.workflow_run.event == 'pull_request' }}
+        if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BODY:     ${{ steps.create.outputs.body }}
@@ -129,7 +133,7 @@ jobs:
             --repo "${{ github.repository }}"
 
       - name: Post PR comment (failure)
-        if: ${{ failure() && github.event.workflow_run.event == 'pull_request' }}
+        if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -145,29 +149,25 @@ jobs:
             exit 0
           fi
 
-          # Identify which step failed
-          if   [ "${{ steps.changed.outcome }}"  = "failure" ]; then
+          if [ "${{ steps.changed.outcome }}" = "failure" ]; then
             FAILED_STEP="Find changed contract files"
-          elif [ "${{ steps.create.outcome }}"   = "failure" ]; then
+          elif [ "${{ steps.create.outcome }}" = "failure" ]; then
             FAILED_STEP="Create or update contracts"
           else
-            FAILED_STEP="Unknown step"
+            FAILED_STEP="Install data-intelligence-sdk"
           fi
 
-          cat > /tmp/pr_body.md << 'MDEOF'
+          cat > /tmp/pr_body.md <<MDEOF
           ## ❌ Data Contract Create — failed
 
-          **Failed step:** `$FAILED_STEP`
+          **Failed step:** \`${FAILED_STEP}\`
 
-          ```
-          ${{ steps.create.outcome == 'failure' && 'See the workflow logs for the full error output.' || 'A setup step failed before contracts could be created. See the workflow logs.' }}
-          ```
+          \`\`\`
+          See the workflow logs for the full error output.
+          \`\`\`
 
-          > Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          > [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
           MDEOF
-
-          # Re-render with the actual variable (heredoc above captures literal $FAILED_STEP)
-          sed -i "s|\$FAILED_STEP|${FAILED_STEP}|g" /tmp/pr_body.md
 
           gh pr comment "$PR_NUMBER" \
             --body-file /tmp/pr_body.md \
