@@ -73,15 +73,32 @@ def main() -> int:
 
     for cid in contract_ids:
         print(f"Triggering test for contract id={cid} ...")
-        test_resp = provider.test_project_data_contract(
-            project_id, cid,
-            DataContractTestRequest(retain_dq_objects=False),
-        )
-        run_id = test_resp.id
+        try:
+            test_resp = provider.test_project_data_contract(
+                project_id, cid,
+                DataContractTestRequest(retain_dq_objects=False),
+            )
+        except ValueError as exc:
+            print(f"ERROR: test trigger failed for {cid}: {exc}", file=sys.stderr)
+            overall = 1
+            result_lines.append(f"### ❌ `{cid}` — test trigger failed")
+            result_lines.append(f"> Error: `{exc}`")
+            result_lines.append("")
+            continue
+
+        # The API returns `job_run_id`; the SDK model maps it to `id` only
+        # when that field name is present — fall back to `job_run_id` from
+        # the pydantic extra-fields dict when `id` is None.
+        run_id = test_resp.id or (
+            test_resp.model_extra or {}
+        ).get("job_run_id")
         if not run_id:
-            print(f"WARNING: no run_id returned for contract {cid}", file=sys.stderr)
+            raw = test_resp.model_dump()
+            print(f"WARNING: could not resolve run_id for contract {cid}. "
+                  f"Raw response: {raw}", file=sys.stderr)
             overall = 1
             result_lines.append(f"### ❌ `{cid}` — test trigger returned no run ID")
+            result_lines.append(f"> Raw response (all fields): `{raw}`")
             result_lines.append("")
             continue
 
@@ -133,7 +150,10 @@ def main() -> int:
             out.write("EOF\n")
             out.write(f"overall={overall}\n")
 
-    return overall
+    # Always exit 0 here — the composite action's "Fail if test failed" step
+    # reads `overall` from GITHUB_OUTPUT and calls `exit 1` if needed.
+    # Returning non-zero here would skip the "Post PR comment (success)" step.
+    return 0
 
 
 if __name__ == "__main__":
