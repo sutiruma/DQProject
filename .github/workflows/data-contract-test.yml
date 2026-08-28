@@ -1,0 +1,215 @@
+# NOTE: This workflow uses workflow_run which only fires for workflow files
+# present on the default branch (main). While this PR is open, the test
+# logic lives in validate-data-contract.yml as Job 3 (needs: create).
+# Once merged to main, this file takes over.
+
+name: Data Contract Test
+
+on:
+  workflow_run:
+    workflows: ["Data Contract Create"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+env:
+  URL:        ${{ secrets.URL }}
+  API_KEY:    ${{ secrets.API_KEY }}
+  PROJECT_ID: ${{ secrets.PROJECT_ID }}
+
+jobs:
+  test:
+    # Only run when the create workflow succeeded
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download contract_ids artifact from create workflow
+        id: artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Fetch the artifact uploaded by the create workflow
+          ARTIFACT_URL=$(gh api \
+            /repos/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}/artifacts \
+            --jq '.artifacts[] | select(.name=="contract-ids") | .archive_download_url')
+
+          if [ -z "$ARTIFACT_URL" ]; then
+            echo "No contract-ids artifact found — skipping."
+            echo "contract_ids=" >> $GITHUB_OUTPUT
+          else
+            gh api "$ARTIFACT_URL" > /tmp/contract_ids.zip
+            unzip -p /tmp/contract_ids.zip contract_ids.txt > /tmp/contract_ids.txt
+            IDS=$(cat /tmp/contract_ids.txt | tr '\n' ' ' | xargs)
+            echo "contract_ids=$IDS" >> $GITHUB_OUTPUT
+            echo "Found contract IDs: $IDS"
+          fi
+
+      - name: Install data-intelligence-sdk
+        run: |
+          pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "data-intelligence-sdk==2.2.0rc1"
+
+      - name: Trigger and poll test runs
+        id: test
+        env:
+          CONTRACT_IDS: ${{ steps.artifact.outputs.contract_ids }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, sys, time, requests
+
+          import urllib3
+          urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+          from wxdi.data_contracts import DataContractsProvider
+          from wxdi.data_contracts.models import DataContractTestRequest
+          from wxdi.dq_validator.provider.config import ProviderConfig
+
+          resp = requests.post(
+              "https://iam.test.cloud.ibm.com/identity/token",
+              headers={"Content-Type": "application/x-www-form-urlencoded"},
+              data={
+                  "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
+                  "apikey": os.environ["API_KEY"],
+              },
+              timeout=30,
+          )
+          resp.raise_for_status()
+          bearer = "Bearer " + resp.json()["access_token"]
+
+          config     = ProviderConfig(url=os.environ["URL"], auth_token=bearer)
+          provider   = DataContractsProvider(config)
+          project_id = os.environ["PROJECT_ID"]
+
+          contract_ids = os.environ.get("CONTRACT_IDS", "").split()
+          if not contract_ids:
+              print("No contract IDs received — nothing to test.")
+              sys.exit(0)
+
+          MAX_POLLS     = 30
+          POLL_INTERVAL = 10
+
+          result_lines = []
+          overall      = 0
+
+          for cid in contract_ids:
+              print(f"Triggering test for contract id={cid} ...")
+              test_resp = provider.test_project_data_contract(
+                  project_id, cid,
+                  DataContractTestRequest(retain_dq_objects=False),
+              )
+              run_id = test_resp.id
+              if not run_id:
+                  print(f"WARNING: no run_id returned for contract {cid}", file=sys.stderr)
+                  overall = 1
+                  result_lines.append(f"### ❌ `{cid}` — test trigger returned no run ID")
+                  continue
+
+              print(f"  run_id={run_id} — polling ...")
+              result = None
+              for _ in range(MAX_POLLS):
+                  result = provider.get_project_data_contract_test_result(
+                      project_id, cid, run_id, include_all_details=True
+                  )
+                  if result.status in ("completed", "failed"):
+                      break
+                  time.sleep(POLL_INTERVAL)
+
+              status = result.status if result else "unknown"
+              start  = result.start  if result else "-"
+              end    = result.end    if result else "-"
+              run_by = result.run_by if result else "-"
+
+              if status == "completed":
+                  result_lines.append(f"### ✅ `{cid}` — test completed")
+              else:
+                  overall = 1
+                  result_lines.append(f"### ❌ `{cid}` — test **{status}**")
+
+              result_lines.append(
+                  f"> Run ID: `{run_id}` | Started: {start} | Ended: {end} | Run by: {run_by}"
+              )
+
+              if result and result.check_results:
+                  rows = ["| Rule | Status | Passed |", "|---|---|---|"]
+                  for cr in result.check_results:
+                      rows.append(
+                          f"| {cr.check_name or '-'} | `{cr.status or '-'}` | {cr.passed} |"
+                      )
+                  result_lines.append("\n**Check Results**\n\n" + "\n".join(rows))
+
+              warn_logs = [l for l in (result.logs if result else []) if l.level in ("error", "warn")]
+              if warn_logs:
+                  result_lines.append(f"⚠️ {len(warn_logs)} warning/error log message(s)")
+
+              result_lines.append("")
+
+          md = "## 🧪 Data Contract Test Run\n\n" + "\n".join(result_lines) + "\n"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("body<<EOF\n")
+              out.write(md + "\n")
+              out.write("EOF\n")
+              out.write(f"overall={overall}\n")
+          PYEOF
+
+      - name: Post PR comment (success)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY:     ${{ steps.test.outputs.body }}
+        run: |
+          PR_NUMBER=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "${{ github.event.workflow_run.head_branch }}" \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open PR found — skipping comment."
+            exit 0
+          fi
+
+          printf "%b" "$BODY" > /tmp/pr_body.md
+          gh pr comment "$PR_NUMBER" \
+            --body-file /tmp/pr_body.md \
+            --repo "${{ github.repository }}"
+
+      - name: Post PR comment (failure)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "${{ github.event.workflow_run.head_branch }}" \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open PR found — skipping comment."
+            exit 0
+          fi
+
+          cat > /tmp/pr_body.md <<MDEOF
+          ## ❌ Data Contract Test — failed
+
+          \`\`\`
+          See the workflow logs for the full error output.
+          \`\`\`
+
+          > [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          MDEOF
+
+          gh pr comment "$PR_NUMBER" \
+            --body-file /tmp/pr_body.md \
+            --repo "${{ github.repository }}"
+
+      - name: Fail if test failed
+        if: steps.test.outputs.overall == '1'
+        run: exit 1
