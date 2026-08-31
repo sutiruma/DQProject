@@ -168,7 +168,7 @@ def main() -> int:
 
             result_lines.append("\n**Check Results**\n\n" + "\n".join(rows))
 
-        # Show schema validation issues if present
+        # Always show schema validation issues as informational — does not affect overall pass/fail
         schema_results = (result.model_extra or {}).get("schema_validation_results") if result else None
         if schema_results:
             sv_rows = ["| Table | Column | Issue | Expected | Actual |", "|---|---|---|---|---|"]
