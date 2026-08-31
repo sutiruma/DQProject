@@ -128,16 +128,49 @@ def main() -> int:
         )
 
         if result and result.check_results:
-            rows = ["| Rule | Status | Passed |", "|---|---|---|"]
+            # Determine whether any check failed — if so, add a Message column
+            any_failed = any(
+                (cr.status or "").lower() in ("failed", "error")
+                for cr in result.check_results
+            )
+            if any_failed:
+                rows = ["| Rule | Status | Passed | Message |", "|---|---|---|---|"]
+            else:
+                rows = ["| Rule | Status | Passed |", "|---|---|---|"]
+
             for cr in result.check_results:
-                rows.append(
-                    f"| {cr.check_name or '-'} | `{cr.status or '-'}` | {cr.passed} |"
+                # check_name may be None if the API uses a different field name;
+                # fall back to model_extra keys like "rule_name" or "name"
+                extra = cr.model_extra or {}
+                rule = (
+                    cr.check_name
+                    or extra.get("rule_name")
+                    or extra.get("name")
+                    or "-"
                 )
+                st  = cr.status or "-"
+                chk = "✅" if cr.passed else ("❌" if cr.passed is False else "-")
+                if any_failed:
+                    msg = cr.message or extra.get("message") or ""
+                    rows.append(f"| {rule} | `{st}` | {chk} | {msg} |")
+                else:
+                    rows.append(f"| {rule} | `{st}` | {chk} |")
+
             result_lines.append("\n**Check Results**\n\n" + "\n".join(rows))
 
-        warn_logs = [lg for lg in (result.logs if result else []) if lg.level in ("error", "warn")]
-        if warn_logs:
-            result_lines.append(f"⚠️ {len(warn_logs)} warning/error log message(s)")
+        # Show error-level log messages beneath the table
+        error_logs = [
+            lg for lg in (result.logs if result else [])
+            if (lg.level or "").lower() in ("error", "warn")
+        ]
+        if error_logs:
+            log_lines = ["**Logs**", "```"]
+            for lg in error_logs:
+                ts  = f"[{lg.timestamp}] " if lg.timestamp else ""
+                lvl = (lg.level or "").upper()
+                log_lines.append(f"{ts}{lvl}: {lg.message or ''}")
+            log_lines.append("```")
+            result_lines.append("\n" + "\n".join(log_lines))
 
         result_lines.append("")
 
