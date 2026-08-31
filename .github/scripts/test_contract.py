@@ -128,49 +128,58 @@ def main() -> int:
         )
 
         if result and result.check_results:
-            # Determine whether any check failed — if so, add a Message column
-            any_failed = any(
-                (cr.status or "").lower() in ("failed", "error")
+            # All meaningful fields live in model_extra — the API response uses
+            # data_quality_rule.name/id, dataset.name/field, and per-check logs[].message
+            any_error = any(
+                (cr.status or "").lower() == "error"
                 for cr in result.check_results
             )
-            if any_failed:
-                rows = ["| Rule | Status | Passed | Message |", "|---|---|---|---|"]
+            if any_error:
+                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed | Message |",
+                        "|---|---|---|---|---|---|---|---|"]
             else:
-                rows = ["| Rule | Status | Passed |", "|---|---|---|"]
+                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed |",
+                        "|---|---|---|---|---|---|---|"]
 
             for cr in result.check_results:
-                # check_name may be None if the API uses a different field name;
-                # fall back to model_extra keys like "rule_name" or "name"
                 extra = cr.model_extra or {}
-                rule = (
-                    cr.check_name
-                    or extra.get("rule_name")
-                    or extra.get("name")
-                    or "-"
-                )
-                st  = cr.status or "-"
-                chk = "✅" if cr.passed else ("❌" if cr.passed is False else "-")
-                if any_failed:
-                    msg = cr.message or extra.get("message") or ""
-                    rows.append(f"| {rule} | `{st}` | {chk} | {msg} |")
+
+                # Rule: use data_quality_rule.id, fall back to .name
+                dq_rule  = extra.get("data_quality_rule") or {}
+                rule     = dq_rule.get("id") or dq_rule.get("name") or cr.check_name or "-"
+
+                # Dataset / field
+                dataset_obj = extra.get("dataset") or {}
+                dataset     = dataset_obj.get("name") or "-"
+                field       = dataset_obj.get("field") or "-"
+
+                st      = cr.status or extra.get("status") or "-"
+                tested  = extra.get("tested_record_count", "-")
+                passed  = extra.get("passed_record_count", "-")
+                failed  = extra.get("failed_record_count", "-")
+
+                if any_error:
+                    # Per-check logs list — grab the first message
+                    check_logs = extra.get("logs") or []
+                    msg = check_logs[0].get("message") if check_logs else (cr.message or "")
+                    rows.append(f"| {rule} | {dataset} | {field} | `{st}` | {tested} | {passed} | {failed} | {msg} |")
                 else:
-                    rows.append(f"| {rule} | `{st}` | {chk} |")
+                    rows.append(f"| {rule} | {dataset} | {field} | `{st}` | {tested} | {passed} | {failed} |")
 
             result_lines.append("\n**Check Results**\n\n" + "\n".join(rows))
 
-        # Show error-level log messages beneath the table
-        error_logs = [
-            lg for lg in (result.logs if result else [])
-            if (lg.level or "").lower() in ("error", "warn")
-        ]
-        if error_logs:
-            log_lines = ["**Logs**", "```"]
-            for lg in error_logs:
-                ts  = f"[{lg.timestamp}] " if lg.timestamp else ""
-                lvl = (lg.level or "").upper()
-                log_lines.append(f"{ts}{lvl}: {lg.message or ''}")
-            log_lines.append("```")
-            result_lines.append("\n" + "\n".join(log_lines))
+        # Show schema validation issues if present
+        schema_results = (result.model_extra or {}).get("schema_validation_results") if result else None
+        if schema_results:
+            sv_rows = ["| Table | Column | Issue | Expected | Actual |", "|---|---|---|---|---|"]
+            for table_name, issues in schema_results.items():
+                for issue in (issues or []):
+                    col   = issue.get("column_name") or "-"
+                    msg   = issue.get("message") or "-"
+                    exp   = issue.get("expected_value") or "-"
+                    act   = issue.get("actual_value") or "-"
+                    sv_rows.append(f"| `{table_name}` | `{col}` | {msg} | `{exp}` | `{act}` |")
+            result_lines.append("\n**Schema Validation Issues**\n\n" + "\n".join(sv_rows))
 
         result_lines.append("")
 
