@@ -1,0 +1,86 @@
+name: 'Data Contract — Create'
+description: >
+  Creates or replaces data contract YAML files in a CPD/watsonx project
+  using the data-intelligence-sdk and posts a PR comment with the results.
+
+inputs:
+  changed-files:
+    description: 'Space-separated list of changed contract file paths'
+    required: true
+  url:
+    description: 'CPD / watsonx base URL'
+    required: true
+  api-key:
+    description: 'IBM Cloud IAM API key'
+    required: true
+  project-id:
+    description: 'CPD project ID'
+    required: true
+  pr-number:
+    description: 'Pull request number to comment on'
+    required: true
+  repository:
+    description: 'Repository in owner/repo format'
+    required: true
+  github-token:
+    description: 'GitHub token for posting PR comments'
+    required: true
+
+outputs:
+  contract-ids:
+    description: 'Space-separated list of created/updated contract IDs'
+    value: ${{ steps.create.outputs.contract_ids }}
+  body:
+    description: 'Markdown summary of create results'
+    value: ${{ steps.create.outputs.body }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install data-intelligence-sdk
+      shell: bash
+      run: |
+        pip install \
+          --index-url https://test.pypi.org/simple/ \
+          --extra-index-url https://pypi.org/simple/ \
+          "data-intelligence-sdk==2.2.0rc1"
+
+    - name: Create or update contracts
+      id: create
+      shell: bash
+      env:
+        URL:        ${{ inputs.url }}
+        API_KEY:    ${{ inputs.api-key }}
+        PROJECT_ID: ${{ inputs.project-id }}
+      run: |
+        python3 ${{ github.action_path }}/../../scripts/create_contract.py \
+          ${{ inputs.changed-files }}
+
+    - name: Post PR comment (success)
+      if: success()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BODY:     ${{ steps.create.outputs.body }}
+      run: |
+        printf "%b" "$BODY" > /tmp/pr_body.md
+        gh pr comment "${{ inputs.pr-number }}" \
+          --body-file /tmp/pr_body.md \
+          --repo "${{ inputs.repository }}"
+
+    - name: Post PR comment (failure)
+      if: failure()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        cat > /tmp/pr_body.md <<'MDEOF'
+        ## ❌ Data Contract Create — failed
+
+        ```
+        See the workflow logs for the full error output.
+        ```
+        MDEOF
+        gh pr comment "${{ inputs.pr-number }}" \
+          --body-file /tmp/pr_body.md \
+          --repo "${{ inputs.repository }}"
