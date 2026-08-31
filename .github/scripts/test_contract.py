@@ -135,10 +135,10 @@ def main() -> int:
                 for cr in result.check_results
             )
             if any_error:
-                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed | Message |",
+                rows = ["| Rule ID | Dataset | Field | Status | Tested | Passed | Failed | Message |",
                         "|---|---|---|---|---|---|---|---|"]
             else:
-                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed |",
+                rows = ["| Rule ID | Dataset | Field | Status | Tested | Passed | Failed |",
                         "|---|---|---|---|---|---|---|"]
 
             for cr in result.check_results:
