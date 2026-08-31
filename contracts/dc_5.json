@@ -1,0 +1,77 @@
+{
+  "version": "1.0.0",
+  "apiVersion": "v3.1.0",
+  "kind": "DataContract",
+  "id": "Bank_contract_001",
+  "name": "BANK_transaction_contract",
+  "status": "active",
+  "domain": "Accounting and Finance: Financial Reporting",
+  "tenant": "banking_department",
+  "servers": [
+    {
+      "server": "banking-db",
+      "type": "db2",
+      "description": "DB2 production database for client accounts",
+      "environment": "prod",
+      "host": "169.44.151.75",
+      "port": 50000,
+      "database": "BANK",
+      "schema": "BANK1",
+      "customProperties": [
+        {
+          "property": "database",
+          "value": "BANK"
+        },
+        {
+          "property": "schema",
+          "value": "BANK1"
+        }
+      ]
+    }
+  ],
+  "dataProduct": "BankingDataProduct",
+  "schema": [
+    {
+      "name": "BANK_CLIENTS",
+      "physicalName": "BANK1/BANK_CLIENTS",
+      "physicalType": "table",
+      "logicalType": "object",
+      "quality": [
+        {
+          "name": "table_row_count",
+          "type": "sql",
+          "query": "SELECT * FROM BANK1.BANK_CLIENTS;",
+          "mustBe": 5112,
+          "dimension": "completeness"
+        }
+      ],
+      "properties": [
+        {
+          "name": "ACCOUNT_ID",
+          "physicalName": "ACCOUNT_ID",
+          "logicalType": "string",
+          "quality": [
+            {
+              "name": "Null Value Check for CCN",
+              "type": "sql",
+              "query": "SELECT * FROM BANK1.BANK_CLIENTS WHERE CCN IS NULL;",
+              "dimension": "accuracy",
+              "mustBeGreaterThan": 200
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "connectionIds",
+      "value": [
+        "019eac2f-9c7e-705c-bf08-696c85bf9b0f"
+      ]
+    }
+  ]
+}
