@@ -108,7 +108,7 @@ def main() -> int:
             result = provider.get_project_data_contract_test_result(
                 project_id, cid, run_id, include_all_details=True
             )
-            if result.status in ("completed", "failed"):
+            if (result.status or "").lower() in ("completed", "failed"):
                 break
             time.sleep(POLL_INTERVAL)
 
@@ -117,7 +117,7 @@ def main() -> int:
         end    = result.end    if result else "-"
         run_by = result.run_by if result else "-"
 
-        if status == "completed":
+        if status.lower() == "completed":
             result_lines.append(f"### ✅ `{cid}` — test completed")
         else:
             overall = 1
