@@ -46,8 +46,8 @@ runs:
       id: validate
       shell: bash
       env:
-        URL:     ${{ inputs.url }}
-        API_KEY: ${{ inputs.api-key }}
+        PLATFORM_URL:     ${{ inputs.url }}
+        PLATFORM_API_KEY: ${{ inputs.api-key }}
       run: |
         RESULT_MD="## 🔍 Data Contract Validation\n\n"
         OVERALL=0

@@ -7,7 +7,7 @@ Usage:
 
 Environment variables (required):
     URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
-    API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
+    PLATFORM_API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
 
 Project ID is read exclusively from customProperties.projectId in the contract file.
 
@@ -66,14 +66,14 @@ def main() -> int:
 
     contract_file = sys.argv[1]
 
-    cpd_url  = os.environ.get("URL", "").rstrip("/")
-    api_key  = os.environ.get("API_KEY", "")
+    cpd_url  = os.environ.get("PLATFORM_URL", "").rstrip("/")
+    api_key  = os.environ.get("PLATFORM_API_KEY", "")
 
     # Project ID comes exclusively from customProperties.projectId in the file
     project_id = extract_project_id(contract_file, "")
 
     if not cpd_url or not api_key or not project_id:
-        missing = [n for n, v in [("URL", cpd_url), ("API_KEY", api_key)] if not v]
+        missing = [n for n, v in [("PLATFORM_URL", cpd_url), ("PLATFORM_API_KEY", api_key)] if not v]
         if not project_id:
             print(
                 f"ERROR: customProperties.projectId not found in {contract_file}.",

@@ -9,8 +9,8 @@ Each entry must be a <project_id>:<contract_id> pair emitted by create_contract.
 Project ID is embedded in each entry from customProperties.projectId in the contract file.
 
 Environment variables (required):
-    URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
-    API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
+    PLATFORM_URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
+    PLATFORM_API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
 
 Exit codes:
     0 - all contract tests completed (pass/fail reported via GITHUB_OUTPUT)
@@ -64,8 +64,8 @@ def main() -> int:
         print("No contract IDs provided — nothing to test.")
         return 0
 
-    cpd_url = os.environ.get("URL", "").rstrip("/")
-    api_key = os.environ.get("API_KEY", "")
+    cpd_url = os.environ.get("PLATFORM_URL", "").rstrip("/")
+    api_key = os.environ.get("PLATFORM_API_KEY", "")
 
     bearer   = get_bearer_token(api_key)
     config   = ProviderConfig(url=cpd_url, auth_token=bearer)

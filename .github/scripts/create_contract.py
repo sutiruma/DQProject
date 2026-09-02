@@ -6,8 +6,8 @@ Usage:
     python create_contract.py <file1> [<file2> ...]
 
 Environment variables (required):
-    URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
-    API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
+    PLATFORM_URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
+    PLATFORM_API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
 
 Project ID is read exclusively from customProperties.projectId in each contract file.
 
@@ -65,8 +65,8 @@ def main() -> int:
         print("No contract files provided — nothing to create.")
         return 0
 
-    cpd_url = os.environ.get("URL", "").rstrip("/")
-    api_key = os.environ.get("API_KEY", "")
+    cpd_url = os.environ.get("PLATFORM_URL", "").rstrip("/")
+    api_key = os.environ.get("PLATFORM_API_KEY", "")
 
     bearer   = get_bearer_token(api_key)
     config   = ProviderConfig(url=cpd_url, auth_token=bearer)

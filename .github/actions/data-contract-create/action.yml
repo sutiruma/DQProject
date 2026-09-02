@@ -46,8 +46,8 @@ runs:
       id: create
       shell: bash
       env:
-        URL:     ${{ inputs.url }}
-        API_KEY: ${{ inputs.api-key }}
+        PLATFORM_URL:     ${{ inputs.url }}
+        PLATFORM_API_KEY: ${{ inputs.api-key }}
       run: |
         python3 ${{ github.action_path }}/../../scripts/create_contract.py \
           ${{ inputs.changed-files }}
