@@ -6,21 +6,23 @@ Usage:
     python create_contract.py <file1> [<file2> ...]
 
 Environment variables (required):
-    URL        - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
-    API_KEY    - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
-    PROJECT_ID - Project ID that owns the contract
+    URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
+    API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
+
+Project ID is read exclusively from customProperties.projectId in each contract file.
 
 Exit codes:
     0 - all contracts created/updated successfully
     1 - one or more contracts failed or an error occurred
 
 Writes GITHUB_OUTPUT:
-    body        - Markdown summary for PR comment
-    contract_ids - Space-separated list of created/updated contract IDs
+    body         - Markdown summary for PR comment
+    contract_ids - Space-separated list of <project_id>:<contract_id> pairs
 """
 
 import os
 import sys
+import importlib.util
 import requests
 import urllib3
 
@@ -29,6 +31,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from wxdi.data_contracts import DataContractsProvider
 from wxdi.data_contracts.models import DataContractPrototypeYaml
 from wxdi.dq_validator.provider.config import ProviderConfig
+
+# Load contract_utils from the same directory as this script
+_utils_path = os.path.join(os.path.dirname(__file__), "contract_utils.py")
+_spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
+_mod  = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+extract_project_id = _mod.extract_project_id
 
 IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
@@ -56,19 +65,30 @@ def main() -> int:
         print("No contract files provided — nothing to create.")
         return 0
 
-    cpd_url    = os.environ.get("URL", "").rstrip("/")
-    api_key    = os.environ.get("API_KEY", "")
-    project_id = os.environ.get("PROJECT_ID", "")
+    cpd_url = os.environ.get("URL", "").rstrip("/")
+    api_key = os.environ.get("API_KEY", "")
 
-    bearer     = get_bearer_token(api_key)
-    config     = ProviderConfig(url=cpd_url, auth_token=bearer)
-    provider   = DataContractsProvider(config)
+    bearer   = get_bearer_token(api_key)
+    config   = ProviderConfig(url=cpd_url, auth_token=bearer)
+    provider = DataContractsProvider(config)
 
-    result_lines = []
-    contract_ids = []
+    result_lines   = []
+    # Store "project_id:contract_id" pairs so the test job knows which
+    # project each contract belongs to.
+    contract_pairs = []
 
     for f in files:
         name = os.path.splitext(os.path.basename(f))[0]
+
+        # Project ID comes exclusively from customProperties.projectId in the file
+        project_id = extract_project_id(f, "")
+        if not project_id:
+            print(f"ERROR: customProperties.projectId not found in {f}.",
+                  file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Using project_id={project_id} for {f}")
+
         with open(f, "r", encoding="utf-8") as fh:
             content = fh.read()
 
@@ -89,7 +109,7 @@ def main() -> int:
             result_lines.append(f"### ✅ `{f}` — created (id: `{contract.id}`)")
             print(f"Created  {f}  →  id={contract.id}")
 
-        contract_ids.append(contract.id)
+        contract_pairs.append(f"{project_id}:{contract.id}")
 
     md = "## 📦 Data Contract Create\n\n" + "\n\n".join(result_lines) + "\n"
     github_output = os.environ.get("GITHUB_OUTPUT", "")
@@ -98,7 +118,8 @@ def main() -> int:
             out.write("body<<EOF\n")
             out.write(md + "\n")
             out.write("EOF\n")
-            out.write("contract_ids=" + " ".join(filter(None, contract_ids)) + "\n")
+            # Emit "project_id:contract_id" pairs — test_contract.py reads these
+            out.write("contract_ids=" + " ".join(contract_pairs) + "\n")
 
     return 0
 
