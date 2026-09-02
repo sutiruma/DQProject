@@ -6,9 +6,10 @@ Usage:
     python validate_contract.py <contract_file>
 
 Environment variables (required):
-    URL        - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
-    API_KEY    - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
-    PROJECT_ID - Project ID that owns the contract
+    URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
+    PLATFORM_API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
+
+Project ID is read exclusively from customProperties.projectId in the contract file.
 
 Exit codes:
     0 - contract is valid
@@ -17,6 +18,7 @@ Exit codes:
 
 import os
 import sys
+import importlib.util
 
 import requests
 import urllib3
@@ -25,6 +27,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from wxdi.data_contracts import DataContractsProvider
 from wxdi.data_contracts.models import DataContractValidationRequest
 from wxdi.dq_validator.provider.config import ProviderConfig
+
+# Load contract_utils from the same directory as this script
+_utils_path = os.path.join(os.path.dirname(__file__), "contract_utils.py")
+_spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
+_mod  = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+extract_project_id = _mod.extract_project_id
 
 IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
@@ -57,16 +66,24 @@ def main() -> int:
 
     contract_file = sys.argv[1]
 
-    cpd_url    = os.environ.get("URL", "").rstrip("/")
-    api_key    = os.environ.get("API_KEY", "")
-    project_id = os.environ.get("PROJECT_ID", "")
+    cpd_url  = os.environ.get("PLATFORM_URL", "").rstrip("/")
+    api_key  = os.environ.get("PLATFORM_API_KEY", "")
+
+    # Project ID comes exclusively from customProperties.projectId in the file
+    project_id = extract_project_id(contract_file, "")
 
     if not cpd_url or not api_key or not project_id:
-        print(
-            "ERROR: URL, API_KEY, and PROJECT_ID environment variables are required.",
-            file=sys.stderr,
-        )
+        missing = [n for n, v in [("PLATFORM_URL", cpd_url), ("PLATFORM_API_KEY", api_key)] if not v]
+        if not project_id:
+            print(
+                f"ERROR: customProperties.projectId not found in {contract_file}.",
+                file=sys.stderr,
+            )
+        if missing:
+            print(f"ERROR: missing required env vars: {', '.join(missing)}", file=sys.stderr)
         return 1
+
+    print(f"Using project_id={project_id} for {contract_file}")
 
     try:
         bearer_token = get_bearer_token(api_key)

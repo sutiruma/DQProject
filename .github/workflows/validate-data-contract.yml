@@ -33,9 +33,8 @@ jobs:
         uses: ./.github/actions/data-contract-validate
         with:
           changed-files: ${{ steps.changed.outputs.all_changed_files }}
-          url:           ${{ secrets.URL }}
-          api-key:       ${{ secrets.API_KEY }}
-          project-id:    ${{ secrets.PROJECT_ID }}
+          url:           ${{ secrets.PLATFORM_URL }}
+          api-key:       ${{ secrets.PLATFORM_API_KEY }}
           pr-number:     ${{ github.event.pull_request.number }}
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}
@@ -62,9 +61,8 @@ jobs:
         uses: ./.github/actions/data-contract-create
         with:
           changed-files: ${{ steps.changed.outputs.all_changed_files }}
-          url:           ${{ secrets.URL }}
-          api-key:       ${{ secrets.API_KEY }}
-          project-id:    ${{ secrets.PROJECT_ID }}
+          url:           ${{ secrets.PLATFORM_URL }}
+          api-key:       ${{ secrets.PLATFORM_API_KEY }}
           pr-number:     ${{ github.event.pull_request.number }}
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}
@@ -82,9 +80,8 @@ jobs:
         uses: ./.github/actions/data-contract-test
         with:
           contract-ids:  ${{ needs.create.outputs.contract_ids }}
-          url:           ${{ secrets.URL }}
-          api-key:       ${{ secrets.API_KEY }}
-          project-id:    ${{ secrets.PROJECT_ID }}
+          url:           ${{ secrets.PLATFORM_URL }}
+          api-key:       ${{ secrets.PLATFORM_API_KEY }}
           pr-number:     ${{ github.event.pull_request.number }}
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}
