@@ -35,8 +35,10 @@ from wxdi.dq_validator.provider.config import ProviderConfig
 
 IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
-MAX_POLLS     = 30
-POLL_INTERVAL = 10
+MAX_POLLS        = 30
+POLL_INTERVAL    = 10
+TRIGGER_RETRIES  = 3      # retry the POST trigger on transient 5xx errors
+TRIGGER_BACKOFF  = 15     # seconds between retries (doubles each attempt)
 
 
 def get_bearer_token(api_key: str) -> str:
@@ -85,16 +87,35 @@ def main() -> int:
         project_id, cid = entry.split(":", 1)
 
         print(f"Triggering test for contract id={cid} (project={project_id}) ...")
-        try:
-            test_resp = provider.test_project_data_contract(
-                project_id, cid,
-                DataContractTestRequest(retain_dq_objects=False),
-            )
-        except ValueError as exc:
-            print(f"ERROR: test trigger failed for {cid}: {exc}", file=sys.stderr)
+        test_resp = None
+        last_exc  = None
+        for attempt in range(1, TRIGGER_RETRIES + 1):
+            try:
+                test_resp = provider.test_project_data_contract(
+                    project_id, cid,
+                    DataContractTestRequest(retain_dq_objects=False),
+                )
+                break  # success — stop retrying
+            except ValueError as exc:
+                last_exc = exc
+                # Only retry on transient server errors (5xx in the message)
+                is_transient = any(
+                    code in str(exc) for code in ("500", "502", "503", "504")
+                )
+                if is_transient and attempt < TRIGGER_RETRIES:
+                    wait = TRIGGER_BACKOFF * (2 ** (attempt - 1))
+                    print(f"  attempt {attempt}/{TRIGGER_RETRIES} failed (transient): {exc}",
+                          file=sys.stderr)
+                    print(f"  retrying in {wait}s ...", file=sys.stderr)
+                    time.sleep(wait)
+                else:
+                    break  # non-transient error or out of retries
+
+        if test_resp is None:
+            print(f"ERROR: test trigger failed for {cid}: {last_exc}", file=sys.stderr)
             overall = 1
             result_lines.append(f"### ❌ `{cid}` — test trigger failed")
-            result_lines.append(f"> Error: `{exc}`")
+            result_lines.append(f"> Error: `{last_exc}`")
             result_lines.append("")
             continue
 
