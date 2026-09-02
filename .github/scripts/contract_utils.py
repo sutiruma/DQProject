@@ -22,7 +22,7 @@ def extract_project_id(contract_file: str, fallback: str) -> str:
             value: <uuid>
 
     Works for both JSON (.json) and YAML (.yaml / .yml) contract files.
-    Falls back to `fallback` (typically the PROJECT_ID env var) when:
+    Falls back to `fallback` when:
       - the file cannot be parsed
       - customProperties is absent
       - no entry with property == "projectId" exists

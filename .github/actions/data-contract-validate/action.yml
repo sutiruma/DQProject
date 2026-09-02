@@ -13,9 +13,6 @@ inputs:
   api-key:
     description: 'IBM Cloud IAM API key'
     required: true
-  project-id:
-    description: 'CPD project ID'
-    required: true
   pr-number:
     description: 'Pull request number to comment on'
     required: true
@@ -49,9 +46,8 @@ runs:
       id: validate
       shell: bash
       env:
-        URL:        ${{ inputs.url }}
-        API_KEY:    ${{ inputs.api-key }}
-        PROJECT_ID: ${{ inputs.project-id }}
+        URL:     ${{ inputs.url }}
+        API_KEY: ${{ inputs.api-key }}
       run: |
         RESULT_MD="## 🔍 Data Contract Validation\n\n"
         OVERALL=0

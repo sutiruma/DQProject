@@ -6,7 +6,7 @@ Usage:
     python test_contract.py <entry1> [<entry2> ...]
 
 Each entry must be a <project_id>:<contract_id> pair emitted by create_contract.py.
-Project ID is embedded in each entry — no PROJECT_ID env var is used.
+Project ID is embedded in each entry from customProperties.projectId in the contract file.
 
 Environment variables (required):
     URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)

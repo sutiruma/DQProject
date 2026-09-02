@@ -35,7 +35,6 @@ jobs:
           changed-files: ${{ steps.changed.outputs.all_changed_files }}
           url:           ${{ secrets.URL }}
           api-key:       ${{ secrets.API_KEY }}
-          project-id:    ${{ secrets.PROJECT_ID }}
           pr-number:     ${{ github.event.pull_request.number }}
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}
@@ -64,7 +63,6 @@ jobs:
           changed-files: ${{ steps.changed.outputs.all_changed_files }}
           url:           ${{ secrets.URL }}
           api-key:       ${{ secrets.API_KEY }}
-          project-id:    ${{ secrets.PROJECT_ID }}
           pr-number:     ${{ github.event.pull_request.number }}
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}
@@ -84,7 +82,6 @@ jobs:
           contract-ids:  ${{ needs.create.outputs.contract_ids }}
           url:           ${{ secrets.URL }}
           api-key:       ${{ secrets.API_KEY }}
-          project-id:    ${{ secrets.PROJECT_ID }}
           pr-number:     ${{ github.event.pull_request.number }}
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}

@@ -5,16 +5,13 @@ description: >
 
 inputs:
   contract-ids:
-    description: 'Space-separated list of contract IDs to test'
+    description: 'Space-separated list of project_id:contract_id pairs to test'
     required: true
   url:
     description: 'CPD / watsonx base URL'
     required: true
   api-key:
     description: 'IBM Cloud IAM API key'
-    required: true
-  project-id:
-    description: 'CPD project ID'
     required: true
   pr-number:
     description: 'Pull request number to comment on'
@@ -49,9 +46,8 @@ runs:
       id: test
       shell: bash
       env:
-        URL:        ${{ inputs.url }}
-        API_KEY:    ${{ inputs.api-key }}
-        PROJECT_ID: ${{ inputs.project-id }}
+        URL:     ${{ inputs.url }}
+        API_KEY: ${{ inputs.api-key }}
       run: |
         python3 ${{ github.action_path }}/../../scripts/test_contract.py \
           ${{ inputs.contract-ids }}
