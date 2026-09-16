@@ -1,0 +1,110 @@
+{
+  "version": "1.0.0",
+  "apiVersion": "v3.1.0",
+  "kind": "DataContract",
+  "id": "Bank_contract_001",
+  "name": "BANK_transaction_contract-1Library-Based11240119",
+  "status": "active",
+  "tenant": "banking_department",
+  "servers": [
+    {
+      "server": "banking-db",
+      "type": "db2",
+      "description": "DB2 production database for client accounts",
+      "environment": "prod",
+      "host": "169.44.151.75",
+      "port": 50000,
+      "database": "BANK",
+      "schema": "BANK1",
+      "customProperties": [
+        {
+          "property": "database",
+          "value": "BANK"
+        },
+        {
+          "property": "schema",
+          "value": "BANK1"
+        }
+      ]
+    }
+  ],
+  "dataProduct": "BankingDataProduct",
+  "schema": [
+    {
+      "name": "Bank_transactions",
+      "physicalType": "application/x-ibm-rel-table",
+      "physicalName": "BANK1/BANK_CLIENTS",
+      "logicalType": "object",
+      "description": "Stores client and account-related information for retail banking customers.",
+      "quality": [
+        {
+          "name": "Row Count Check",
+          "type": "library",
+          "metric": "rowCount",
+          "description": "Validates that the table has at least one record.",
+          "dimension": "coverage",
+          "mustBe": 5112
+        }
+      ],
+      "properties": [
+        {
+          "name": "ZIP",
+          "physicalName": "ZIP",
+          "logicalType": "string",
+          "quality": [
+            {
+              "name": "Invalid ZIP format via Library check",
+              "type": "library",
+              "metric": "invalidValues",
+              "arguments": {
+                "pattern": "^[0-9]{5}$"
+              },
+              "mustBeLessThan": 3000
+            }
+          ],
+          "primaryKey": false,
+          "unique": false,
+          "required": true
+        },
+        {
+          "name": "GENDER",
+          "physicalName": "GENDER",
+          "logicalType": "string",
+          "quality": [
+            {
+              "name": "Invalid gender via library check",
+              "type": "library",
+              "metric": "invalidValues",
+              "arguments": {
+                "validValues": [
+                  "M",
+                  "F"
+                ]
+              },
+              "mustBeBetween": [
+                4111,
+                5209
+              ]
+            }
+          ],
+          "primaryKey": false,
+          "unique": false,
+          "required": true
+        }
+      ]
+      
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "connectionIds",
+      "value": [
+        "efd914dd-0d3d-44ea-81aa-c3b029b18257"
+      ]
+    },
+    {
+      "property": "projectId",
+      "value": "79087fca-4a55-497a-a061-ce49fb897a26"
+    }
+  ]
+}
