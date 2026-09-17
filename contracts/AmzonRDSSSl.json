@@ -56,7 +56,7 @@
               "type": "sql",
               "query": "SELECT * FROM TM_IKC_MDI.SCALAR_FUNCTIONS_DB2 where INT_BASE>-7 and VARCHAR_LCASE IS NOT NULL and INT_SUM=-25;",
               "dimension": "accuracy",
-              "mustBeGreaterThan": 3
+              "mustBeLessThan": 3
             }
           ],
           "primaryKey": false,
