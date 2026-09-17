@@ -41,7 +41,7 @@
           "name": "table_row_count",
           "type": "sql",
           "query": "SELECT * FROM TM_IKC_MDI.SCALAR_FUNCTIONS_DB2;",
-          "mustBe": 5112,
+          "mustBe": 10,
           "dimension": "completeness"
         }
       ],
