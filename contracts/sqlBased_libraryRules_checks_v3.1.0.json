@@ -200,19 +200,19 @@
           "unique": true,
           "required": true
         }
-      ],
-      "customProperties": [
-        {
-          "property": "connectionIds",
-          "value": [
-            "01a0af68-81b9-7589-b0c1-cce1c16e28f0"
-          ]
-        },
-        {
-          "property": "projectId",
-          "value": "454498c4-4eba-472f-8ff0-669a38b4e52a"
-        }
       ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "connectionIds",
+      "value": [
+        "01a0af68-81b9-7589-b0c1-cce1c16e28f0"
+      ]
+    },
+    {
+      "property": "projectId",
+      "value": "454498c4-4eba-472f-8ff0-669a38b4e52a"
     }
   ]
 }
