@@ -3,7 +3,7 @@
   "apiVersion": "v3.1.0",
   "kind": "DataContract",
   "id": "Bank_contract_001",
-  "name": "BANK_transaction_contract111122389",
+  "name": "BANK_transaction_contract111122380",
   "status": "active",
   "tenant": "banking_department",
   "servers": [
