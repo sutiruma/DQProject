@@ -15,7 +15,6 @@
       "host": "169.44.151.75",
       "port": 50000,
       "database": "BANK",
-      "schema": "BANK1",
       "customProperties": [
         {
           "property": "database",
