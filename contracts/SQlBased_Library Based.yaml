@@ -150,6 +150,7 @@ schema:
         required: true
 customProperties:
   - property: connectionIds
-    value: - 01a0c376-cae5-74dc-bd11-cdc3d03cc9bd
+    value: 
+    - 01a0c376-cae5-74dc-bd11-cdc3d03cc9bd
   - property: projectId
     value: - e6f2220d-b835-418d-8f3b-438bbeeb897f
