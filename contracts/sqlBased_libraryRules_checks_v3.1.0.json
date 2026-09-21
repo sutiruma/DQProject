@@ -57,7 +57,7 @@
       "logicalType": "object",
       "quality": [
         {
-          "name": "table_row_count",
+          "name": "table_row_counts",
           "type": "sql",
           "query": "SELECT * FROM BANK1.BANK_CLIENTS;",
           "mustBe": 5112,
