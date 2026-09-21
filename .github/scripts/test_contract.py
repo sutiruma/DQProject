@@ -168,10 +168,10 @@ def main() -> int:
                 for cr in result.check_results
             )
             if any_error:
-                rows = ["| Rule ID | Dataset | Field | Status | Tested | Passed | Failed | Message |",
+                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed | Message |",
                         "|---|---|---|---|---|---|---|---|"]
             else:
-                rows = ["| Rule ID | Dataset | Field | Status | Tested | Passed | Failed |",
+                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed |",
                         "|---|---|---|---|---|---|---|"]
 
             for cr in result.check_results:
@@ -179,7 +179,7 @@ def main() -> int:
 
                 # Rule: use data_quality_rule.id, fall back to .name
                 dq_rule  = extra.get("data_quality_rule") or {}
-                rule     = dq_rule.get("id") or dq_rule.get("name") or cr.check_name or "-"
+                rule     = dq_rule.get("name") or cr.check_name or "-"
 
                 # Dataset / field
                 dataset_obj = extra.get("dataset") or {}
