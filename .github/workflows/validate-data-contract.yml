@@ -110,6 +110,9 @@ jobs:
           contract-ids: ${{ needs.create-ephemeral.outputs.contract_ids }}
           url:          ${{ secrets.PLATFORM_URL }}
           api-key:      ${{ secrets.PLATFORM_API_KEY }}
+          pr-number:    ${{ github.event.pull_request.number }}
+          repository:   ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # ════════════════════════════════════════════════════════════════════════════
   # MERGE FLOW: upsert real contracts after PR is merged to main
