@@ -95,7 +95,33 @@ jobs:
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Job 4: Delete ephemeral contracts (always runs after test) ───────────────
+  # ── Job 4: PR merge gate ─────────────────────────────────────────────────────
+  # This job is the REQUIRED STATUS CHECK configured in branch protection.
+  # Name to add under Settings → Branches → Require status checks: "pr-status"
+  # It succeeds when no contracts changed (skipped upstream jobs are fine),
+  # and fails when validate or test failed or was cancelled.
+  pr-status:
+    if: always() && github.event_name == 'pull_request'
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check pipeline outcome
+        shell: bash
+        run: |
+          VALIDATE="${{ needs.validate.result }}"
+          TEST="${{ needs.test.result }}"
+          echo "validate=$VALIDATE  test=$TEST"
+          if [[ "$VALIDATE" == "failure" || "$VALIDATE" == "cancelled" ]]; then
+            echo "❌ Blocked: validate job $VALIDATE"
+            exit 1
+          fi
+          if [[ "$TEST" == "failure" || "$TEST" == "cancelled" ]]; then
+            echo "❌ Blocked: test job $TEST"
+            exit 1
+          fi
+          echo "✅ All required checks passed (or no contracts changed)."
+
+  # ── Job 5: Delete ephemeral contracts (always runs after test) ───────────────
   delete-ephemeral:
     if: always() && github.event_name == 'pull_request' && needs.create-ephemeral.outputs.contract_ids != ''
     needs: [create-ephemeral, test]
@@ -118,7 +144,7 @@ jobs:
   # MERGE FLOW: upsert real contracts after PR is merged to main
   # ════════════════════════════════════════════════════════════════════════════
 
-  # ── Job 5: Upsert real contracts on merge ────────────────────────────────────
+  # ── Job 6: Upsert real contracts on merge ────────────────────────────────────
   upsert-on-merge:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
