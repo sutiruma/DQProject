@@ -1,0 +1,35 @@
+name: 'Data Contract — Delete'
+description: >
+  Deletes ephemeral data contracts from a CPD/watsonx project.
+  Used after PR validation to clean up _PR_<pr_number> contracts.
+
+inputs:
+  contract-ids:
+    description: 'Space-separated list of project_id:contract_id pairs to delete'
+    required: true
+  url:
+    description: 'CPD / watsonx base URL'
+    required: true
+  api-key:
+    description: 'IBM Cloud IAM API key'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install data-intelligence-sdk
+      shell: bash
+      run: |
+        pip install \
+          --index-url https://test.pypi.org/simple/ \
+          --extra-index-url https://pypi.org/simple/ \
+          "data-intelligence-sdk==2.2.0rc1"
+
+    - name: Delete ephemeral contracts
+      shell: bash
+      env:
+        PLATFORM_URL:     ${{ inputs.url }}
+        PLATFORM_API_KEY: ${{ inputs.api-key }}
+      run: |
+        python3 ${{ github.action_path }}/../../scripts/delete_contract.py \
+          ${{ inputs.contract-ids }}
