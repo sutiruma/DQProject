@@ -41,7 +41,7 @@
           "name": "table_row_counts",
           "type": "sql",
           "query": "SELECT * FROM TM_IKC_MDI.SCALAR_FUNCTIONS_DB2;",
-          "mustBe": 15,
+          "mustBe": 10,
           "dimension": "completeness"
         }
       ],
@@ -49,7 +49,7 @@
         {
           "name": "VARCHAR_LCASE",
           "physicalName": "VARCHAR_LCASE",
-          "logicalType": "string",
+          "logicalType": "integer",
           "quality": [
             {
               "name": "Null Value Checks for SCALAR",
