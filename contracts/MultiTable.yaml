@@ -2,7 +2,7 @@ version: 1.0.0
 apiVersion: v3.1.0
 kind: DataContract
 id: Bank_contract_001
-name: BANK_transaction_contract_updated
+name: BANK_transaction_contract_Test23
 status: active
 domain: 'Accounting and Finance: Financial Reporting'
 tenant: banking_department
