@@ -1,0 +1,76 @@
+version: 1.0.0
+apiVersion: v3.1.0
+kind: DataContract
+id: Bank_contract_001
+name: BANK_transaction_contract_updated
+status: active
+domain: 'Accounting and Finance: Financial Reporting'
+tenant: banking_department
+servers:
+  - server: banking-db-2
+    type: db2
+    description: DB2 production database for client accounts
+    environment: prod
+    host: 169.44.151.75
+    port: 50000
+    database: BANK
+    schema: BANK4
+    customProperties:
+      - property: database
+        value: BANK
+      - property: schema
+        value: BANK4
+dataProduct: BankingDataProduct
+schema:
+  - name: BANK_CUSTOMERS
+    physicalName: BANK4/BANK_CUSTOMERS
+    physicalType: table
+    logicalType: object
+    quality:
+      - name: Marital status inconsistent with age
+        type: sql
+        query: >-
+          SELECT AGE, MARITAL_STATUS FROM BANK2.BANK_CUSTOMERS WHERE AGE < 16 AND
+          MARITAL_STATUS IN ('married','divorced','widowed');
+        mustBeLessThan: 5
+    properties:
+      - name: EMAIL
+        physicalName: EMAIL
+        logicalType: string
+        quality:
+          - name: Invalid email address format
+            type: sql
+            query: >-
+              SELECT EMAIL FROM BANK2.BANK_CUSTOMERS WHERE EMAIL IS NOT NULL AND
+              NOT
+              REGEXP_LIKE(TRIM(EMAIL),'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z](2,)$');
+            mustBeLessThan: 5
+        primaryKey: false
+        unique: true
+        required: true
+      - name: GENDER
+        physicalName: GENDER
+        logicalType: string
+        quality:
+          - name: Invalid gender
+            type: sql
+            query: >-
+              SELECT GENDER FROM BANK2.BANK_CUSTOMERS WHERE GENDER NOT IN
+              ('L','F');
+            mustBeLessThan: 3540
+  - name: BANK_ACCOUNTS
+    physicalName: BANK2/BANK_ACCOUNTS
+    physicalType: table
+    logicalType: object
+    quality:
+      - name: table_row_count
+        type: sql
+        query: SELECT * FROM BANK2.BANK_ACCOUNTS;
+        mustBe: 5112
+        dimension: completeness
+customProperties:
+  - property: connectionIds
+    value:
+      - 
+  - property: projectId
+    value: 9e2969e2-4eb9-47db-babf-b3dc164b92b9
