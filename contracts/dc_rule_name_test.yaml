@@ -61,7 +61,7 @@
         {
           "name": "ACCOUNT_ID",
           "physicalName": "ACCOUNT_ID",
-          "logicalType": "string",
+          "logicalType": "integer",
           "quality": [
             {
               "name": "Null Value Check for CCN",
@@ -124,7 +124,7 @@
         {
           "name": "AGE",
           "physicalName": "AGE",
-          "logicalType": "string",
+          "logicalType": "number",
           "quality": [
             {
               "name": "Implausible customer ages",
