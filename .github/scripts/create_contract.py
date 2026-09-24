@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """
-Create or replace data contracts in a CPD/watsonx project.
+Create data contracts in a CPD/watsonx project.
+
+Two modes:
+
+  --mode pr   (PR validation)
+      Creates an ephemeral contract named "<contract_name>_PR_<pr_number>".
+      The contract is used for CI testing only and deleted afterwards.
+      Emits contract_ids as "<project_id>:<contract_id>" pairs.
+
+  --mode merge  (post-merge upsert)
+      Creates or replaces the real contract using the canonical name from
+      the contract file. This is the production upsert path.
 
 Usage:
-    python create_contract.py <file1> [<file2> ...]
+    python create_contract.py --mode pr   --pr-number <N> <file1> [<file2> ...]
+    python create_contract.py --mode merge               <file1> [<file2> ...]
 
 Environment variables (required):
     PLATFORM_URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
@@ -22,6 +34,7 @@ Writes GITHUB_OUTPUT:
 
 import os
 import sys
+import argparse
 import importlib.util
 import requests
 import urllib3
@@ -60,10 +73,21 @@ def get_bearer_token(api_key: str) -> str:
 
 
 def main() -> int:
-    files = sys.argv[1:]
-    if not files:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["pr", "merge"], required=True,
+                        help="'pr' creates an ephemeral contract; 'merge' upserts the real one")
+    parser.add_argument("--pr-number", default="",
+                        help="PR number — required when --mode pr")
+    parser.add_argument("files", nargs="*")
+    args = parser.parse_args()
+
+    if not args.files:
         print("No contract files provided — nothing to create.")
         return 0
+
+    if args.mode == "pr" and not args.pr_number:
+        print("ERROR: --pr-number is required when --mode pr", file=sys.stderr)
+        return 1
 
     cpd_url = os.environ.get("PLATFORM_URL", "").rstrip("/")
     api_key = os.environ.get("PLATFORM_API_KEY", "")
@@ -73,21 +97,24 @@ def main() -> int:
     provider = DataContractsProvider(config)
 
     result_lines   = []
-    # Store "project_id:contract_id" pairs so the test job knows which
-    # project each contract belongs to.
     contract_pairs = []
 
-    for f in files:
-        name = os.path.splitext(os.path.basename(f))[0]
+    for f in args.files:
+        canonical_name = os.path.splitext(os.path.basename(f))[0]
 
-        # Project ID comes exclusively from customProperties.projectId in the file
+        # In PR mode use an ephemeral name so the real contract is untouched
+        if args.mode == "pr":
+            name = f"{canonical_name}_PR_{args.pr_number}"
+        else:
+            name = canonical_name
+
         project_id = extract_project_id(f, "")
         if not project_id:
             print(f"ERROR: customProperties.projectId not found in {f}.",
                   file=sys.stderr)
             sys.exit(1)
 
-        print(f"Using project_id={project_id} for {f}")
+        print(f"[{args.mode}] Using project_id={project_id}, contract name='{name}' for {f}")
 
         with open(f, "r", encoding="utf-8") as fh:
             content = fh.read()
@@ -100,25 +127,35 @@ def main() -> int:
             contract = provider.replace_project_data_contract(
                 project_id, existing.id, body, validate=True
             )
-            result_lines.append(f"### 🔄 `{f}` — updated (id: `{contract.id}`)")
-            print(f"Updated  {f}  →  id={contract.id}")
+            if args.mode == "pr":
+                result_lines.append(f"### 🔄 `{f}` — ephemeral contract updated (name: `{name}`, id: `{contract.id}`)")
+            else:
+                result_lines.append(f"### 🔄 `{f}` — updated (id: `{contract.id}`)")
+            print(f"Updated  {f}  →  name={name}  id={contract.id}")
         else:
             contract = provider.create_project_data_contract(
                 project_id, body, validate=True
             )
-            result_lines.append(f"### ✅ `{f}` — created (id: `{contract.id}`)")
-            print(f"Created  {f}  →  id={contract.id}")
+            if args.mode == "pr":
+                result_lines.append(f"### ✅ `{f}` — ephemeral contract created (name: `{name}`, id: `{contract.id}`)")
+            else:
+                result_lines.append(f"### ✅ `{f}` — created (id: `{contract.id}`)")
+            print(f"Created  {f}  →  name={name}  id={contract.id}")
 
         contract_pairs.append(f"{project_id}:{contract.id}")
 
-    md = "## 📦 Data Contract Create\n\n" + "\n\n".join(result_lines) + "\n"
+    if args.mode == "pr":
+        md_title = "## 📦 Data Contract Create (Ephemeral — PR validation)"
+    else:
+        md_title = "## 📦 Data Contract Create"
+
+    md = md_title + "\n\n" + "\n\n".join(result_lines) + "\n"
     github_output = os.environ.get("GITHUB_OUTPUT", "")
     if github_output:
         with open(github_output, "a") as out:
             out.write("body<<EOF\n")
             out.write(md + "\n")
             out.write("EOF\n")
-            # Emit "project_id:contract_id" pairs — test_contract.py reads these
             out.write("contract_ids=" + " ".join(contract_pairs) + "\n")
 
     return 0

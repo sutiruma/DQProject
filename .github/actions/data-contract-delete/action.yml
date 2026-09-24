@@ -1,15 +1,12 @@
-name: 'Data Contract — Create'
+name: 'Data Contract — Delete'
 description: >
-  Creates data contracts in a CPD/watsonx project. In PR mode, creates an
-  ephemeral contract named <name>_PR_<pr_number> for CI validation only.
-  In merge mode, upserts the real contract with the canonical name.
+  Deletes ephemeral data contracts from a CPD/watsonx project.
+  Used after PR validation to clean up _PR_<pr_number> contracts.
+  Posts a PR comment confirming deletion (or reporting failure).
 
 inputs:
-  mode:
-    description: "'pr' (ephemeral, for CI) or 'merge' (upsert real contract)"
-    required: true
-  changed-files:
-    description: 'Space-separated list of changed contract file paths'
+  contract-ids:
+    description: 'Space-separated list of project_id:contract_id pairs to delete'
     required: true
   url:
     description: 'CPD / watsonx base URL'
@@ -18,23 +15,14 @@ inputs:
     description: 'IBM Cloud IAM API key'
     required: true
   pr-number:
-    description: 'Pull request number — required when mode is pr'
-    required: false
-    default: ''
+    description: 'Pull request number to comment on'
+    required: true
   repository:
     description: 'Repository in owner/repo format'
     required: true
   github-token:
     description: 'GitHub token for posting PR comments'
     required: true
-
-outputs:
-  contract-ids:
-    description: 'Space-separated list of project_id:contract_id pairs'
-    value: ${{ steps.create.outputs.contract_ids }}
-  body:
-    description: 'Markdown summary of create results'
-    value: ${{ steps.create.outputs.body }}
 
 runs:
   using: 'composite'
@@ -47,38 +35,48 @@ runs:
           --extra-index-url https://pypi.org/simple/ \
           "data-intelligence-sdk==2.2.0rc1"
 
-    - name: Create contracts
-      id: create
+    - name: Delete ephemeral contracts
+      id: delete
       shell: bash
       env:
         PLATFORM_URL:     ${{ inputs.url }}
         PLATFORM_API_KEY: ${{ inputs.api-key }}
       run: |
-        python3 ${{ github.action_path }}/../../scripts/create_contract.py \
-          --mode "${{ inputs.mode }}" \
-          --pr-number "${{ inputs.pr-number }}" \
-          ${{ inputs.changed-files }}
+        python3 ${{ github.action_path }}/../../scripts/delete_contract.py \
+          ${{ inputs.contract-ids }}
 
-    - name: Post PR comment (success)
-      if: success() && inputs.pr-number != ''
+    - name: Post PR comment (deleted)
+      if: success()
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
-        BODY:     ${{ steps.create.outputs.body }}
       run: |
-        printf "%b" "$BODY" > /tmp/pr_body.md
+        IDS="${{ inputs.contract-ids }}"
+        COUNT=$(echo $IDS | wc -w | tr -d ' ')
+        cat > /tmp/pr_body.md <<EOF
+        ## 🗑️ Ephemeral Contracts Cleaned Up
+
+        $COUNT ephemeral contract(s) deleted after PR validation.
+
+        \`\`\`
+        $IDS
+        \`\`\`
+        EOF
         gh pr comment "${{ inputs.pr-number }}" \
           --body-file /tmp/pr_body.md \
           --repo "${{ inputs.repository }}"
 
-    - name: Post PR comment (failure)
-      if: failure() && inputs.pr-number != ''
+    - name: Post PR comment (delete failed)
+      if: failure()
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
         cat > /tmp/pr_body.md <<'MDEOF'
-        ## ❌ Data Contract Create — failed
+        ## ⚠️ Ephemeral Contract Cleanup — failed
+
+        One or more ephemeral contracts could not be deleted.
+        Please remove them manually from the project.
 
         ```
         See the workflow logs for the full error output.

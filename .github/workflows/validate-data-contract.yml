@@ -8,16 +8,28 @@ on:
       - '.github/actions/**'
       - '.github/scripts/**'
 
+  push:
+    branches:
+      - main
+    paths:
+      - 'contracts/**'
+
 permissions:
   pull-requests: write
   contents: read
 
 jobs:
-  # ── Job 1: Validate ───────────────────────────────────────────────────────
+  # ════════════════════════════════════════════════════════════════════════════
+  # PR FLOW: validate → create ephemeral → test → delete ephemeral
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # ── Job 1: Validate ─────────────────────────────────────────────────────────
   validate:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       changed_files: ${{ steps.changed.outputs.all_changed_files }}
+      any_changed:   ${{ steps.changed.outputs.any_changed }}
 
     steps:
       - uses: actions/checkout@v4
@@ -39,12 +51,77 @@ jobs:
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Job 2: Create (only runs when validate succeeds) ─────────────────────
-  create:
+  # ── Job 2: Create temp contracts ────────────────────────────────────────────
+  create-temp-contract:
+    if: github.event_name == 'pull_request' && needs.validate.outputs.any_changed == 'true'
     needs: validate
     runs-on: ubuntu-latest
     outputs:
       contract_ids: ${{ steps.create.outputs.contract-ids }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create ephemeral contracts (_PR_<number>)
+        id: create
+        uses: ./.github/actions/data-contract-create
+        with:
+          mode:          pr
+          changed-files: ${{ needs.validate.outputs.changed_files }}
+          pr-number:     ${{ github.event.pull_request.number }}
+          url:           ${{ secrets.PLATFORM_URL }}
+          api-key:       ${{ secrets.PLATFORM_API_KEY }}
+          repository:    ${{ github.repository }}
+          github-token:  ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Job 3: Test temp contracts ───────────────────────────────────────────────
+  test:
+    if: github.event_name == 'pull_request' && needs.create-temp-contract.outputs.contract_ids != ''
+    needs: create-temp-contract
+    runs-on: ubuntu-latest
+    outputs:
+      contract_ids: ${{ needs.create-temp-contract.outputs.contract_ids }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run contract tests
+        uses: ./.github/actions/data-contract-test
+        with:
+          contract-ids:  ${{ needs.create-temp-contract.outputs.contract_ids }}
+          url:           ${{ secrets.PLATFORM_URL }}
+          api-key:       ${{ secrets.PLATFORM_API_KEY }}
+          pr-number:     ${{ github.event.pull_request.number }}
+          repository:    ${{ github.repository }}
+          github-token:  ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Job 4: Delete temp contracts (always runs after test) ────────────────────
+  delete-temp-contract:
+    if: always() && github.event_name == 'pull_request' && needs.create-temp-contract.outputs.contract_ids != ''
+    needs: [create-temp-contract, test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Delete temp contracts
+        uses: ./.github/actions/data-contract-delete
+        with:
+          contract-ids: ${{ needs.create-temp-contract.outputs.contract_ids }}
+          url:          ${{ secrets.PLATFORM_URL }}
+          api-key:      ${{ secrets.PLATFORM_API_KEY }}
+          pr-number:    ${{ github.event.pull_request.number }}
+          repository:   ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # MERGE FLOW: upsert real contracts after PR is merged to main
+  # ════════════════════════════════════════════════════════════════════════════
+
+  # ── Job 5: Upsert real contracts on merge ────────────────────────────────────
+  upsert-on-merge:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -54,34 +131,15 @@ jobs:
         uses: tj-actions/changed-files@v44
         with:
           files: 'contracts/**'
+          since_last_remote_commit: true
 
-      - name: Create or update contracts
-        id: create
+      - name: Upsert real contracts
         if: steps.changed.outputs.any_changed == 'true'
         uses: ./.github/actions/data-contract-create
         with:
+          mode:          merge
           changed-files: ${{ steps.changed.outputs.all_changed_files }}
           url:           ${{ secrets.PLATFORM_URL }}
           api-key:       ${{ secrets.PLATFORM_API_KEY }}
-          pr-number:     ${{ github.event.pull_request.number }}
-          repository:    ${{ github.repository }}
-          github-token:  ${{ secrets.GITHUB_TOKEN }}
-
-  # ── Job 3: Test (only runs when create succeeds) ──────────────────────────
-  test:
-    needs: create
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run contract tests
-        if: needs.create.outputs.contract_ids != ''
-        uses: ./.github/actions/data-contract-test
-        with:
-          contract-ids:  ${{ needs.create.outputs.contract_ids }}
-          url:           ${{ secrets.PLATFORM_URL }}
-          api-key:       ${{ secrets.PLATFORM_API_KEY }}
-          pr-number:     ${{ github.event.pull_request.number }}
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}

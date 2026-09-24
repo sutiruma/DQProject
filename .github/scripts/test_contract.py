@@ -150,6 +150,12 @@ def main() -> int:
         end    = result.end    if result else "-"
         run_by = result.run_by if result else "-"
 
+        # Determine whether the failure is purely due to schema validation issues
+        # (no check_results, but schema_validation_results present).
+        # Distinguish blocking vs non-blocking schema issues.
+        schema_results = (result.model_extra or {}).get("schema_validation_results") if result else None
+        check_results  = result.check_results if result else []
+
         if status.lower() == "completed":
             result_lines.append(f"### ✅ `{cid}` — test completed")
         else:
@@ -160,7 +166,7 @@ def main() -> int:
             f"> Run ID: `{run_id}` | Started: {start} | Ended: {end} | Run by: {run_by}"
         )
 
-        if result and result.check_results:
+        if result and check_results:
             # All meaningful fields live in model_extra — the API response uses
             # data_quality_rule.name/id, dataset.name/field, and per-check logs[].message
             any_error = any(
@@ -168,10 +174,10 @@ def main() -> int:
                 for cr in result.check_results
             )
             if any_error:
-                rows = ["| Rule ID | Dataset | Field | Status | Tested | Passed | Failed | Message |",
+                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed | Message |",
                         "|---|---|---|---|---|---|---|---|"]
             else:
-                rows = ["| Rule ID | Dataset | Field | Status | Tested | Passed | Failed |",
+                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed |",
                         "|---|---|---|---|---|---|---|"]
 
             for cr in result.check_results:
@@ -179,7 +185,7 @@ def main() -> int:
 
                 # Rule: use data_quality_rule.id, fall back to .name
                 dq_rule  = extra.get("data_quality_rule") or {}
-                rule     = dq_rule.get("id") or dq_rule.get("name") or cr.check_name or "-"
+                rule     = dq_rule.get("name") or cr.check_name or "-"
 
                 # Dataset / field
                 dataset_obj = extra.get("dataset") or {}
@@ -201,8 +207,7 @@ def main() -> int:
 
             result_lines.append("\n**Check Results**\n\n" + "\n".join(rows))
 
-        # Always show schema validation issues as informational — does not affect overall pass/fail
-        schema_results = (result.model_extra or {}).get("schema_validation_results") if result else None
+        # Show schema validation issues (already resolved above)
         if schema_results:
             sv_rows = ["| Table | Column | Issue | Expected | Actual |", "|---|---|---|---|---|"]
             for table_name, issues in schema_results.items():
