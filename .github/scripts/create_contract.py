@@ -50,9 +50,86 @@ _utils_path = os.path.join(os.path.dirname(__file__), "contract_utils.py")
 _spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
 _mod  = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
-extract_project_id = _mod.extract_project_id
+extract_target_info = _mod.extract_target_info
 
 IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
+
+
+def get_dph_client(cpd_url: str, bearer_token: str):
+    """Create and return a configured DphV1 client."""
+    try:
+        from wxdi.dph.v1 import DphV1
+    except ImportError:
+        try:
+            from wxdi.dph_v1 import DphV1
+        except ImportError:
+            from ibm_watsonx_data.dph_v1 import DphV1
+
+    from ibm_cloud_sdk_core.authenticators import BearerTokenAuthenticator
+
+    raw_token = bearer_token.replace("Bearer ", "").strip()
+    authenticator = BearerTokenAuthenticator(raw_token)
+    dph = DphV1(authenticator=authenticator)
+    dph.set_service_url(cpd_url)
+    return dph
+
+
+def get_dph_catalog_id(dph) -> str:
+    """Fetch default Data Product Hub catalog ID via DphV1.get_initialize_status()."""
+    resp = dph.get_initialize_status()
+    res = resp.get_result() if hasattr(resp, "get_result") else resp.result
+
+    container = res.get("container") or {}
+    catalog_id = container.get("id")
+    status = res.get("status")
+
+    if not catalog_id:
+        raise RuntimeError(f"DPH catalog container ID not found (status={status})")
+
+    return catalog_id
+
+
+def get_draft_contract_info(dph, draft_id: str, data_product_id: str = "-") -> tuple:
+    """Fetch draft details and return (existing_contract_id, resolved_contract_terms_id)."""
+    print(f"  Fetching draft {draft_id} ...")
+    resp = dph.get_data_product_draft(
+        data_product_id=data_product_id,
+        draft_id=draft_id,
+    )
+    res = resp.get_result() if hasattr(resp, "get_result") else resp.result
+    contract_terms_list = res.get("contract_terms") or []
+    if not contract_terms_list:
+        raise RuntimeError(f"No contract_terms found in draft {draft_id}")
+
+    target_terms = contract_terms_list[0]
+    resolved_terms_id = target_terms.get("id")
+    if not resolved_terms_id:
+        raise RuntimeError(f"Missing id in contract_terms for draft {draft_id}")
+
+    existing_contract_id = target_terms.get("data_contract_id") or ""
+
+    return existing_contract_id, resolved_terms_id
+
+
+def link_contract_to_data_product_draft(dph, draft_id: str, contract_terms_id: str, contract_id: str, data_product_id: str = "-"):
+    """Link data contract to draft contract terms using an 'add' JSON patch."""
+    try:
+        from wxdi.dph.v1 import JsonPatchOperation
+    except ImportError:
+        try:
+            from wxdi.dph_v1 import JsonPatchOperation
+        except ImportError:
+            from ibm_watsonx_data.dph_v1 import JsonPatchOperation
+
+    print(f"  Linking contract {contract_id} to draft {draft_id} (contract_terms_id: {contract_terms_id}) ...")
+    patch_op = JsonPatchOperation(op="add", path="/data_contract_id", value=contract_id)
+    dph.update_data_product_draft_contract_terms(
+        data_product_id=data_product_id,
+        draft_id=draft_id,
+        contract_terms_id=contract_terms_id,
+        json_patch_instructions=[patch_op],
+    )
+    print(f"  Successfully linked data_contract_id={contract_id} to draft {draft_id}")
 
 
 def get_bearer_token(api_key: str) -> str:
@@ -99,6 +176,10 @@ def main() -> int:
     result_lines   = []
     contract_pairs = []
 
+    # Cache DPH client and catalog id if needed
+    dph_client = None
+    dph_catalog_id = None
+
     for f in args.files:
         canonical_name = os.path.splitext(os.path.basename(f))[0]
 
@@ -108,41 +189,138 @@ def main() -> int:
         else:
             name = canonical_name
 
-        project_id = extract_project_id(f, "")
-        if not project_id:
-            print(f"ERROR: customProperties.projectId not found in {f}.",
-                  file=sys.stderr)
-            sys.exit(1)
+        target = extract_target_info(f)
+        is_dph = target.get("is_dph", False)
+        contract_type = target.get("type", "").lower()
+        draft_id = target.get("draft_id", "")
+        data_product_id = "-"
+        project_id = target.get("project_id", "")
 
-        print(f"[{args.mode}] Using project_id={project_id}, contract name='{name}' for {f}")
+        if is_dph:
+            if not dph_client:
+                dph_client = get_dph_client(cpd_url, bearer)
+            if not dph_catalog_id:
+                try:
+                    dph_catalog_id = get_dph_catalog_id(dph_client)
+                except Exception as exc:
+                    print(f"ERROR: Failed to resolve DPH catalog for {f}: {exc}", file=sys.stderr)
+                    sys.exit(1)
+
+            # When type is "contract", draftId is mandatory
+            is_contract_type = contract_type == "contract"
+            if is_contract_type and not draft_id:
+                print(f"ERROR: customProperties.draftId is required when isDPH is true and type is 'contract' in {f}.",
+                      file=sys.stderr)
+                sys.exit(1)
+
+            container_id = dph_catalog_id
+            container_type = "catalog"
+            print(f"[{args.mode}] Using DPH catalog_id={container_id}, contract name='{name}' for {f}")
+        else:
+            if not project_id:
+                print(f"ERROR: customProperties.projectId not found (and isDPH is not true) in {f}.",
+                      file=sys.stderr)
+                sys.exit(1)
+
+            container_id = project_id
+            container_type = "project"
+            print(f"[{args.mode}] Using project_id={container_id}, contract name='{name}' for {f}")
 
         with open(f, "r", encoding="utf-8") as fh:
             content = fh.read()
 
-        collection = provider.list_project_data_contracts(project_id, limit=200)
-        existing   = next((dc for dc in collection.data_contracts if dc.name == name), None)
+        if container_type == "catalog":
+            collection = provider.list_catalog_data_contracts(container_id, limit=200)
+            
+            # Match existing contract by name and type (if type property is present on the asset)
+            def _matches_catalog_dc(dc) -> bool:
+                if dc.name != name:
+                    return False
+                if contract_type:
+                    dc_type = getattr(dc, "type", None) or (getattr(dc, "model_extra", {}) or {}).get("type") or ((getattr(dc, "model_extra", {}) or {}).get("entity", {}).get("ibm_data_contract", {}) or {}).get("type")
+                    if dc_type and str(dc_type).lower() != contract_type:
+                        return False
+                return True
 
-        body = DataContractPrototypeYaml(name=name, contract_yaml=content)
-        if existing:
-            contract = provider.replace_project_data_contract(
-                project_id, existing.id, body, validate=True
-            )
-            if args.mode == "pr":
-                result_lines.append(f"### 🔄 `{f}` — ephemeral contract updated (name: `{name}`, id: `{contract.id}`)")
+            existing = next((dc for dc in collection.data_contracts if _matches_catalog_dc(dc)), None)
+
+            # In DPH contract mode, check draft for an existing attached contract
+            existing_draft_contract_id = ""
+            resolved_terms_id = ""
+            if is_contract_type:
+                try:
+                    existing_draft_contract_id, resolved_terms_id = get_draft_contract_info(
+                        dph=dph_client,
+                        draft_id=draft_id,
+                        data_product_id=data_product_id,
+                    )
+                except Exception as exc:
+                    print(f"ERROR: Failed to inspect draft {draft_id}: {exc}", file=sys.stderr)
+                    sys.exit(1)
+
+            # Determine target contract ID to replace (draft's attached contract takes priority)
+            target_replace_id = existing_draft_contract_id or (existing.id if existing else None)
+
+            body = DataContractPrototypeYaml(name=name, contract_yaml=content)
+            if target_replace_id:
+                # PUT / replace operation on existing contract in catalog
+                print(f"  Existing contract found (id={target_replace_id}). Performing PUT/replace operation in catalog ...")
+                contract = provider.replace_catalog_data_contract(
+                    container_id, target_replace_id, body, validate=True
+                )
+                if args.mode == "pr":
+                    result_lines.append(f"### 🔄 `{f}` — ephemeral DPH contract updated (name: `{name}`, id: `{contract.id}`)")
+                else:
+                    result_lines.append(f"### 🔄 `{f}` — updated in DPH catalog (id: `{contract.id}`)")
+                print(f"Updated DPH contract {f}  →  name={name}  id={contract.id}")
             else:
-                result_lines.append(f"### 🔄 `{f}` — updated (id: `{contract.id}`)")
-            print(f"Updated  {f}  →  name={name}  id={contract.id}")
+                # POST / create new contract in catalog
+                contract = provider.create_catalog_data_contract(
+                    container_id, body, validate=True
+                )
+                # Link newly created contract to data product draft
+                if is_contract_type:
+                    try:
+                        link_contract_to_data_product_draft(
+                            dph=dph_client,
+                            draft_id=draft_id,
+                            contract_terms_id=resolved_terms_id,
+                            data_product_id=data_product_id,
+                            contract_id=contract.id,
+                        )
+                    except Exception as exc:
+                        print(f"ERROR: Failed to link contract {contract.id} to draft {draft_id}: {exc}", file=sys.stderr)
+                        sys.exit(1)
+
+                if args.mode == "pr":
+                    result_lines.append(f"### ✅ `{f}` — ephemeral DPH contract created (name: `{name}`, id: `{contract.id}`)")
+                else:
+                    result_lines.append(f"### ✅ `{f}` — created in DPH catalog (id: `{contract.id}`)")
+                print(f"Created DPH contract {f}  →  name={name}  id={contract.id}")
         else:
-            contract = provider.create_project_data_contract(
-                project_id, body, validate=True
-            )
-            if args.mode == "pr":
-                result_lines.append(f"### ✅ `{f}` — ephemeral contract created (name: `{name}`, id: `{contract.id}`)")
+            collection = provider.list_project_data_contracts(container_id, limit=200)
+            existing   = next((dc for dc in collection.data_contracts if dc.name == name), None)
+            body       = DataContractPrototypeYaml(name=name, contract_yaml=content)
+            if existing:
+                contract = provider.replace_project_data_contract(
+                    container_id, existing.id, body, validate=True
+                )
+                if args.mode == "pr":
+                    result_lines.append(f"### 🔄 `{f}` — ephemeral contract updated (name: `{name}`, id: `{contract.id}`)")
+                else:
+                    result_lines.append(f"### 🔄 `{f}` — updated (id: `{contract.id}`)")
+                print(f"Updated  {f}  →  name={name}  id={contract.id}")
             else:
-                result_lines.append(f"### ✅ `{f}` — created (id: `{contract.id}`)")
-            print(f"Created  {f}  →  name={name}  id={contract.id}")
+                contract = provider.create_project_data_contract(
+                    container_id, body, validate=True
+                )
+                if args.mode == "pr":
+                    result_lines.append(f"### ✅ `{f}` — ephemeral contract created (name: `{name}`, id: `{contract.id}`)")
+                else:
+                    result_lines.append(f"### ✅ `{f}` — created (id: `{contract.id}`)")
+                print(f"Created  {f}  →  name={name}  id={contract.id}")
 
-        contract_pairs.append(f"{project_id}:{contract.id}")
+        contract_pairs.append(f"{container_id}:{contract.id}")
 
     if args.mode == "pr":
         md_title = "## 📦 Data Contract Create (Ephemeral — PR validation)"
