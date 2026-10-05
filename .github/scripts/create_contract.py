@@ -57,14 +57,7 @@ IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
 def get_dph_client(cpd_url: str, bearer_token: str):
     """Create and return a configured DphV1 client."""
-    try:
-        from wxdi.dph.v1 import DphV1
-    except ImportError:
-        try:
-            from wxdi.dph_v1 import DphV1
-        except ImportError:
-            from ibm_watsonx_data.dph_v1 import DphV1
-
+    from wxdi.dph_services import DphV1
     from ibm_cloud_sdk_core.authenticators import BearerTokenAuthenticator
 
     raw_token = bearer_token.replace("Bearer ", "").strip()
@@ -76,15 +69,18 @@ def get_dph_client(cpd_url: str, bearer_token: str):
 
 def get_dph_catalog_id(dph) -> str:
     """Fetch default Data Product Hub catalog ID via DphV1.get_initialize_status()."""
+    from urllib.parse import urlparse, parse_qs
+
     resp = dph.get_initialize_status()
     res = resp.get_result() if hasattr(resp, "get_result") else resp.result
 
-    container = res.get("container") or {}
-    catalog_id = container.get("id")
-    status = res.get("status")
-
+    # Try container object first, then fall back to container.id in href query param
+    catalog_id = (res.get("container") or {}).get("id")
     if not catalog_id:
-        raise RuntimeError(f"DPH catalog container ID not found (status={status})")
+        href = res.get("href", "")
+        catalog_id = parse_qs(urlparse(href).query).get("container.id", [None])[0]
+    if not catalog_id:
+        raise RuntimeError(f"DPH catalog container ID not found (status={res.get('status')})")
 
     return catalog_id
 
@@ -113,13 +109,7 @@ def get_draft_contract_info(dph, draft_id: str, data_product_id: str = "-") -> t
 
 def link_contract_to_data_product_draft(dph, draft_id: str, contract_terms_id: str, contract_id: str, data_product_id: str = "-"):
     """Link data contract to draft contract terms using an 'add' JSON patch."""
-    try:
-        from wxdi.dph.v1 import JsonPatchOperation
-    except ImportError:
-        try:
-            from wxdi.dph_v1 import JsonPatchOperation
-        except ImportError:
-            from ibm_watsonx_data.dph_v1 import JsonPatchOperation
+    from wxdi.dph_services.dph_v1 import JsonPatchOperation
 
     print(f"  Linking contract {contract_id} to draft {draft_id} (contract_terms_id: {contract_terms_id}) ...")
     patch_op = JsonPatchOperation(op="add", path="/data_contract_id", value=contract_id)

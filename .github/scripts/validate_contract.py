@@ -62,15 +62,9 @@ def get_bearer_token(api_key: str) -> str:
 
 def get_dph_catalog_id(cpd_url: str, bearer_token: str) -> str:
     """Fetch the default DPH catalog ID via DphV1.get_initialize_status()."""
-    try:
-        from wxdi.dph.v1 import DphV1
-    except ImportError:
-        try:
-            from wxdi.dph_v1 import DphV1
-        except ImportError:
-            from ibm_watsonx_data.dph_v1 import DphV1
-
+    from wxdi.dph_services import DphV1
     from ibm_cloud_sdk_core.authenticators import BearerTokenAuthenticator
+    from urllib.parse import urlparse, parse_qs
 
     raw_token = bearer_token.replace("Bearer ", "").strip()
     authenticator = BearerTokenAuthenticator(raw_token)
@@ -79,7 +73,12 @@ def get_dph_catalog_id(cpd_url: str, bearer_token: str) -> str:
 
     resp = dph.get_initialize_status()
     res = resp.get_result() if hasattr(resp, "get_result") else resp.result
+
+    # Try container object first, then fall back to container.id in href query param
     catalog_id = (res.get("container") or {}).get("id")
+    if not catalog_id:
+        href = res.get("href", "")
+        catalog_id = parse_qs(urlparse(href).query).get("container.id", [None])[0]
     if not catalog_id:
         raise RuntimeError(f"DPH catalog container ID not found (status={res.get('status')})")
     return catalog_id
