@@ -9,8 +9,7 @@ Environment variables (required):
     PLATFORM_URL     - Base URL of the instance (e.g. https://api.dai.dev.cloud.ibm.com)
     PLATFORM_API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
 
-For non-DPH contracts: projectId is read from customProperties.projectId in the contract file.
-For DPH contracts (isDPH=true): validation is performed against the DPH catalog.
+Project ID is read exclusively from customProperties.projectId in the contract file.
 
 Exit codes:
     0 - contract is valid
@@ -34,7 +33,7 @@ _utils_path = os.path.join(os.path.dirname(__file__), "contract_utils.py")
 _spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
 _mod  = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
-extract_target_info = _mod.extract_target_info
+extract_project_id = _mod.extract_project_id
 
 IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
@@ -60,39 +59,6 @@ def get_bearer_token(api_key: str) -> str:
     return f"Bearer {token}"
 
 
-def get_dph_catalog_id(cpd_url: str, bearer_token: str) -> str:
-    """Fetch the default DPH catalog ID via DphV1.get_initialize_status().
-
-    Validates that DPH initialization has succeeded, then extracts the catalog ID
-    from the container.id query parameter in the response href.
-    """
-    from wxdi.dph_services import DphV1
-    from ibm_cloud_sdk_core.authenticators import BearerTokenAuthenticator
-    from urllib.parse import urlparse, parse_qs
-
-    raw_token = bearer_token.replace("Bearer ", "").strip()
-    authenticator = BearerTokenAuthenticator(raw_token)
-    dph = DphV1(authenticator=authenticator)
-    dph.set_service_url(cpd_url)
-
-    resp = dph.get_initialize_status()
-    res = resp.get_result() if hasattr(resp, "get_result") else resp.result
-
-    status = res.get("status", "")
-    if status != "succeeded":
-        raise RuntimeError(
-            f"DPH initialization has not succeeded (status={status}). "
-            "Ensure the DPH instance is fully initialized before running contracts."
-        )
-
-    # Extract catalog ID from container.id query param in href
-    href = res.get("href", "")
-    catalog_id = parse_qs(urlparse(href).query).get("container.id", [None])[0]
-    if not catalog_id:
-        raise RuntimeError(f"DPH catalog container ID not found in href: {href!r}")
-    return catalog_id
-
-
 def main() -> int:
     if len(sys.argv) != 2:
         print("Usage: validate_contract.py <contract_file>", file=sys.stderr)
@@ -100,28 +66,24 @@ def main() -> int:
 
     contract_file = sys.argv[1]
 
-    cpd_url = os.environ.get("PLATFORM_URL", "").rstrip("/")
-    api_key = os.environ.get("PLATFORM_API_KEY", "")
+    cpd_url  = os.environ.get("PLATFORM_URL", "").rstrip("/")
+    api_key  = os.environ.get("PLATFORM_API_KEY", "")
 
-    missing_env = [n for n, v in [("PLATFORM_URL", cpd_url), ("PLATFORM_API_KEY", api_key)] if not v]
-    if missing_env:
-        print(f"ERROR: missing required env vars: {', '.join(missing_env)}", file=sys.stderr)
-        return 1
+    # Project ID comes exclusively from customProperties.projectId in the file
+    project_id = extract_project_id(contract_file, "")
 
-    target = extract_target_info(contract_file)
-    is_dph     = target.get("is_dph", False)
-    project_id = target.get("project_id", "")
-
-    if is_dph:
-        print(f"DPH contract detected — using catalog-based validation for {contract_file}")
-    else:
+    if not cpd_url or not api_key or not project_id:
+        missing = [n for n, v in [("PLATFORM_URL", cpd_url), ("PLATFORM_API_KEY", api_key)] if not v]
         if not project_id:
             print(
-                f"ERROR: customProperties.projectId not found (and isDPH is not true) in {contract_file}.",
+                f"ERROR: customProperties.projectId not found in {contract_file}.",
                 file=sys.stderr,
             )
-            return 1
-        print(f"Using project_id={project_id} for {contract_file}")
+        if missing:
+            print(f"ERROR: missing required env vars: {', '.join(missing)}", file=sys.stderr)
+        return 1
+
+    print(f"Using project_id={project_id} for {contract_file}")
 
     try:
         bearer_token = get_bearer_token(api_key)
@@ -141,12 +103,7 @@ def main() -> int:
     body     = DataContractValidationRequest(data_contract_content=content)
 
     try:
-        if is_dph:
-            catalog_id = get_dph_catalog_id(cpd_url, bearer_token)
-            print(f"Using DPH catalog_id={catalog_id} for {contract_file}")
-            result = provider.validate_catalog_data_contract(catalog_id, body)
-        else:
-            result = provider.validate_project_data_contract(project_id, body)
+        result = provider.validate_project_data_contract(project_id, body)
     except ValueError as exc:
         print(f"ERROR: Validation request failed: {exc}", file=sys.stderr)
         return 1
