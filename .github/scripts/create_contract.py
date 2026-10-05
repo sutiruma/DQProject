@@ -70,13 +70,44 @@ def get_dph_client(cpd_url: str, bearer_token: str):
 def get_dph_catalog_id(dph) -> str:
     """Fetch default Data Product Hub catalog ID via DphV1.get_initialize_status().
 
-    Validates that DPH initialization has succeeded, then extracts the catalog ID
-    from the container.id query parameter in the response href.
+    If the catalog is not yet initialized (404), triggers initialization first,
+    then retries the status check. Extracts the catalog ID from the container.id
+    query parameter in the response href.
     """
     from urllib.parse import urlparse, parse_qs
+    from ibm_cloud_sdk_core.api_exception import ApiException
 
-    resp = dph.get_initialize_status()
-    res = resp.get_result() if hasattr(resp, "get_result") else resp.result
+    def _get_status():
+        resp = dph.get_initialize_status()
+        return resp.get_result() if hasattr(resp, "get_result") else resp.result
+
+    try:
+        res = _get_status()
+    except ApiException as exc:
+        if exc.status_code == 404:
+            # Catalog not yet initialized — trigger initialization and retry
+            print("DPH catalog not found — triggering initialization ...")
+            try:
+                dph.initialize(
+                    include=["delivery_methods", "data_product_samples",
+                             "domains_multi_industry", "workflows"]
+                )
+            except ApiException as init_exc:
+                raise RuntimeError(
+                    f"DPH initialization failed (status={init_exc.status_code}): {init_exc.message}"
+                ) from init_exc
+            print("DPH initialization triggered — retrying status check ...")
+            try:
+                res = _get_status()
+            except ApiException as retry_exc:
+                raise RuntimeError(
+                    f"DPH status check failed after initialization (status={retry_exc.status_code}): {retry_exc.message}"
+                ) from retry_exc
+        else:
+            raise RuntimeError(
+                f"DPH is not available on this platform (status={exc.status_code}): {exc.message}. "
+                "Ensure the PLATFORM_URL points to an instance with DPH initialized."
+            ) from exc
 
     status = res.get("status", "")
     if status != "succeeded":
