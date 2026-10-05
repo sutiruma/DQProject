@@ -72,6 +72,22 @@
       "value": [
         "019eac2f-9c7e-705c-bf08-696c85bf9b0f"
       ]
+    },
+    {
+      "property": "projectId",
+      "value": "4dc3b3d8-5b0f-4024-9528-e11bf832cfbc"
+    },
+    {
+      "property": "isDPH",
+      "value": true
+    },
+    {
+      "property": "type",
+      "value": "contract"
+    },
+    {
+      "property": "draftId",
+      "value": "id"
     }
   ]
 }
