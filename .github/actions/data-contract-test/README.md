@@ -35,9 +35,11 @@ Triggers test runs for ephemeral contracts, polls until completion, and posts a 
 4. Retries up to **3 times** on transient 5xx errors (exponential backoff: 15 s → 30 s → 60 s).
 5. Polls `get_project_data_contract_test_result()` every **10 seconds**, up to **30 times** (5 min max per contract).
 6. Collects per-rule check results and schema validation issues into a Markdown table.
-7. Writes `overall` and `body` to `GITHUB_OUTPUT`.
-8. Posts a success or failure PR comment.
-9. A dedicated "Fail if test failed" step reads `overall` and calls `exit 1` if needed — the script itself always exits `0` to ensure the comment step always runs.
+7. For each contract whose run is `completed`, writes the full test result to `test-results/test-result_<contract_id>.json`.
+8. Writes `overall` and `body` to `GITHUB_OUTPUT`.
+9. Uploads the `test-results/` JSON files as a workflow artifact (`data-contract-test-results-pr-<pr-number>`).
+10. Posts a success or failure PR comment. On success the comment ends with a link to the artifact.
+11. A dedicated "Fail if test failed" step reads `overall` and calls `exit 1` if needed — the script itself always exits `0` to ensure the comment step always runs.
 
 ---
 
@@ -54,4 +56,8 @@ Triggers test runs for ephemeral contracts, polls until completion, and posts a 
 | Rule | Dataset | Field | Status | Tested | Passed | Failed |
 |---|---|---|---|---|---|---|
 | Null Value Check | BANK_CLIENTS | ACCOUNT_ID | `passed` | 5112 | 5112 | 0 |
+
+📎 [Download test result JSON](https://github.com/<owner>/<repo>/actions/runs/<run_id>/artifacts/<artifact_id>)
 ```
+
+GitHub's API cannot attach files to a PR comment, so the JSON is uploaded as a workflow artifact and linked from the comment. Artifacts require GitHub sign-in to download and expire per the repository's retention setting (90 days by default).

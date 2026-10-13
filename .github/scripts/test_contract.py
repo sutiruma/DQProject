@@ -21,6 +21,7 @@ Writes GITHUB_OUTPUT:
     overall - 0 (all passed) or 1 (one or more failed)
 """
 
+import json
 import os
 import sys
 import time
@@ -28,6 +29,9 @@ import requests
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Directory where per-contract result JSON files are written (uploaded as an artifact).
+RESULTS_DIR = os.environ.get("RESULTS_DIR", "test-results")
 
 from wxdi.data_contracts import DataContractsProvider
 from wxdi.data_contracts.models import DataContractTestRequest
@@ -263,6 +267,15 @@ def main() -> int:
         if sv_rows:
             header = ["| Table | Column | Issue | Expected | Actual |", "|---|---|---|---|---|"]
             result_lines.append("\n**Schema Validation Issues**\n\n" + "\n".join(header + sv_rows))
+
+        # Successful run: save the full result as a JSON file; the action uploads
+        # RESULTS_DIR as a workflow artifact and links it from the PR comment.
+        if result and status.lower() == "completed":
+            os.makedirs(RESULTS_DIR, exist_ok=True)
+            out_path = os.path.join(RESULTS_DIR, f"test-result_{cid}.json")
+            with open(out_path, "w", encoding="utf-8") as fh:
+                json.dump(result.model_dump(exclude_none=True), fh, indent=2, default=str)
+            print(f"  saved test result JSON to {out_path}")
 
         result_lines.append("")
 
