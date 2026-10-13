@@ -9,6 +9,7 @@ The scripts in this directory are the core logic behind each composite action. T
 | [`create_contract.py`](create_contract.py) | Create or upsert contracts (PR or merge mode) |
 | [`test_contract.py`](test_contract.py) | Trigger and poll test runs |
 | [`delete_contract.py`](delete_contract.py) | Delete ephemeral contracts |
+| [`save_test_results.py`](save_test_results.py) | Save PR test results to the real contracts after merge |
 
 ---
 
@@ -131,7 +132,8 @@ python .github/scripts/test_contract.py abc123:dc-id-001 abc123:dc-id-002
 2. Retries up to **3 times** on transient 5xx errors (exponential backoff: 15 s, 30 s, 60 s).
 3. Polls `get_project_data_contract_test_result()` every **10 seconds**, up to **30 times** (5 min max).
 4. Reports per-rule check results (rule name, dataset, field, status, tested/passed/failed counts) and any schema validation issues in a Markdown table.
-5. Writes `overall` (`0` = all passed, `1` = failures) and `body` to `GITHUB_OUTPUT`.
+5. For each run with status `completed`, writes the full result to `$RESULTS_DIR/test-result_<contract_name>.json` (`RESULTS_DIR` defaults to `test-results`). `<contract_name>` is the contract's name with the `_PR_<n>` suffix removed, so the merge flow can match the file to the real contract. If the name lookup fails, the contract ID is used instead.
+6. Writes `overall` (`0` = all passed, `1` = failures) and `body` to `GITHUB_OUTPUT`.
 
 ### Exit codes
 
@@ -171,3 +173,35 @@ The platform deletes DQ rule assets asynchronously before removing the contract 
 |---|---|
 | `0` | All contracts deleted (or already absent) |
 | `1` | One or more deletions failed or timed out |
+
+---
+
+## `save_test_results.py`
+
+Saves the test results from a merged PR against the real contracts, using `POST /test_results`.
+
+```bash
+python .github/scripts/save_test_results.py --results-dir <dir> <project_id:contract_id> [<project_id:contract_id> ...]
+```
+
+`<dir>` is the folder holding the `test-result_<name>.json` files written by `test_contract.py` (the unzipped PR artifact). Each entry is a `project_id:contract_id` pair from `create_contract.py --mode merge`.
+
+**Example**
+
+```bash
+python .github/scripts/save_test_results.py --results-dir ./test-results abc123:dc-id-001
+```
+
+### Behaviour
+
+1. Looks up each contract's name with `get_project_data_contract()`.
+2. Reads `<dir>/test-result_<name>.json`. If the file does not exist, the contract is skipped.
+3. Removes the top-level `id` and `href`, then calls `create_project_data_contract_test_result()`.
+4. Prints the new test result ID and status.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | All available results saved, or nothing to save |
+| `1` | A lookup or save failed, or an entry was not in `project_id:contract_id` format |

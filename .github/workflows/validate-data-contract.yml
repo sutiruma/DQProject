@@ -17,6 +17,7 @@ on:
 permissions:
   pull-requests: write
   contents: read
+  actions: read
 
 jobs:
   # ════════════════════════════════════════════════════════════════════════════
@@ -134,6 +135,7 @@ jobs:
           since_last_remote_commit: true
 
       - name: Upsert real contracts
+        id: upsert
         if: steps.changed.outputs.any_changed == 'true'
         uses: ./.github/actions/data-contract-create
         with:
@@ -143,3 +145,13 @@ jobs:
           api-key:       ${{ secrets.PLATFORM_API_KEY }}
           repository:    ${{ github.repository }}
           github-token:  ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save PR test results to the contracts
+        if: steps.upsert.outputs.contract-ids != ''
+        uses: ./.github/actions/data-contract-save-results
+        with:
+          contract-ids: ${{ steps.upsert.outputs.contract-ids }}
+          url:          ${{ secrets.PLATFORM_URL }}
+          api-key:      ${{ secrets.PLATFORM_API_KEY }}
+          repository:   ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
