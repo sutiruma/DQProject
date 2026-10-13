@@ -119,9 +119,8 @@ def main() -> int:
             result_lines.append("")
             continue
 
-        # The trigger response carries the run id as `test_run_id`; fall back
-        # to `job_run_id` for platforms that only return the latter.
-        run_id = test_resp.test_run_id or test_resp.job_run_id
+        # The trigger response returns the test run id as `id`.
+        run_id = test_resp.id
         if not run_id:
             raw = test_resp.model_dump()
             print(f"WARNING: could not resolve run_id for contract {cid}. "
