@@ -119,12 +119,9 @@ def main() -> int:
             result_lines.append("")
             continue
 
-        # The API returns `job_run_id`; the SDK model maps it to `id` only
-        # when that field name is present — fall back to `job_run_id` from
-        # the pydantic extra-fields dict when `id` is None.
-        run_id = test_resp.id or (
-            test_resp.model_extra or {}
-        ).get("job_run_id")
+        # The trigger response carries the run id as `test_run_id`; fall back
+        # to `job_run_id` for platforms that only return the latter.
+        run_id = test_resp.test_run_id or test_resp.job_run_id
         if not run_id:
             raw = test_resp.model_dump()
             print(f"WARNING: could not resolve run_id for contract {cid}. "
@@ -145,16 +142,10 @@ def main() -> int:
                 break
             time.sleep(POLL_INTERVAL)
 
-        status = result.status if result else "unknown"
+        status = result.status if result and result.status else "unknown"
         start  = result.start  if result else "-"
         end    = result.end    if result else "-"
-        run_by = result.run_by if result else "-"
-
-        # Determine whether the failure is purely due to schema validation issues
-        # (no check_results, but schema_validation_results present).
-        # Distinguish blocking vs non-blocking schema issues.
-        schema_results = (result.model_extra or {}).get("schema_validation_results") if result else None
-        check_results  = result.check_results if result else []
+        run_by = test_resp.run_by or "-"
 
         if status.lower() == "completed":
             result_lines.append(f"### ✅ `{cid}` — test completed")
@@ -166,13 +157,41 @@ def main() -> int:
             f"> Run ID: `{run_id}` | Started: {start} | Ended: {end} | Run by: {run_by}"
         )
 
-        if result and check_results:
-            # All meaningful fields live in model_extra — the API response uses
-            # data_quality_rule.name/id, dataset.name/field, and per-check logs[].message
-            any_error = any(
-                (cr.status or "").lower() == "error"
-                for cr in result.check_results
-            )
+        summary = result.summary if result else None
+        if summary:
+            sv = summary.schema_validation
+            dq = summary.data_quality
+            parts = [f"Overall: `{summary.status or '-'}`"]
+            if sv:
+                parts.append(
+                    f"Schema: `{sv.status or '-'}` "
+                    f"({sv.passed_assets}/{sv.total_assets} assets, "
+                    f"{sv.passed_columns}/{sv.total_columns} columns)"
+                )
+            if dq:
+                parts.append(
+                    f"Data quality: `{dq.status or '-'}` "
+                    f"({dq.passed_checks}/{dq.total_checks} checks passed, "
+                    f"{dq.failed_checks} failed, {dq.error_checks} errors)"
+                )
+            result_lines.append("> " + " | ".join(parts))
+
+        # Data quality checks are attached to either an asset or one of its columns.
+        # Each entry is (dataset, field, check).
+        dq_checks = []
+        for asset in (result.data_assets if result else []):
+            asset_name = asset.name or asset.physical_name or "-"
+            for chk in asset.data_quality_checks:
+                dq_checks.append((asset_name, "-", chk))
+            for col in asset.columns:
+                for chk in col.data_quality_checks:
+                    dq_checks.append((asset_name, col.name or col.physical_name or "-", chk))
+
+        if dq_checks:
+            def _check_status(chk):
+                return (chk.results.status if chk.results else None) or "-"
+
+            any_error = any(_check_status(c).lower() == "error" for _, _, c in dq_checks)
             if any_error:
                 rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed | Message |",
                         "|---|---|---|---|---|---|---|---|"]
@@ -180,44 +199,71 @@ def main() -> int:
                 rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed |",
                         "|---|---|---|---|---|---|---|"]
 
-            for cr in result.check_results:
-                extra = cr.model_extra or {}
-
-                # Rule: use data_quality_rule.id, fall back to .name
-                dq_rule  = extra.get("data_quality_rule") or {}
-                rule     = dq_rule.get("name") or cr.check_name or "-"
-
-                # Dataset / field
-                dataset_obj = extra.get("dataset") or {}
-                dataset     = dataset_obj.get("name") or "-"
-                field       = dataset_obj.get("field") or "-"
-
-                st      = cr.status or extra.get("status") or "-"
-                tested  = extra.get("tested_record_count", "-")
-                passed  = extra.get("passed_record_count", "-")
-                failed  = extra.get("failed_record_count", "-")
-
+            for dataset, field, chk in dq_checks:
+                res    = chk.results
+                rule   = chk.name or (chk.data_quality_rule.id if chk.data_quality_rule else None) or "-"
+                tested = res.tested_record_count if res and res.tested_record_count is not None else "-"
+                passed = res.passed_record_count if res and res.passed_record_count is not None else "-"
+                failed = res.failed_record_count if res and res.failed_record_count is not None else "-"
+                row = f"| {rule} | {dataset} | {field} | `{_check_status(chk)}` | {tested} | {passed} | {failed} |"
                 if any_error:
-                    # Per-check logs list — grab the first message
-                    check_logs = extra.get("logs") or []
-                    msg = check_logs[0].get("message") if check_logs else (cr.message or "")
-                    rows.append(f"| {rule} | {dataset} | {field} | `{st}` | {tested} | {passed} | {failed} | {msg} |")
-                else:
-                    rows.append(f"| {rule} | {dataset} | {field} | `{st}` | {tested} | {passed} | {failed} |")
+                    logs = (chk.model_extra or {}).get("logs") or []
+                    msg  = logs[0].get("message", "") if logs and isinstance(logs[0], dict) else ""
+                    row  = row[:-1] + f" {msg} |"
+                rows.append(row)
 
             result_lines.append("\n**Check Results**\n\n" + "\n".join(rows))
 
-        # Show schema validation issues (already resolved above)
-        if schema_results:
-            sv_rows = ["| Table | Column | Issue | Expected | Actual |", "|---|---|---|---|---|"]
-            for table_name, issues in schema_results.items():
-                for issue in (issues or []):
-                    col   = issue.get("column_name") or "-"
-                    msg   = issue.get("message") or "-"
-                    exp   = issue.get("expected_value") or "-"
-                    act   = issue.get("actual_value") or "-"
-                    sv_rows.append(f"| `{table_name}` | `{col}` | {msg} | `{exp}` | `{act}` |")
-            result_lines.append("\n**Schema Validation Issues**\n\n" + "\n".join(sv_rows))
+        # Schema validation issues: anything not reported as passed.
+        sv_rows = []
+        for asset in (result.data_assets if result else []):
+            asset_name = asset.name or asset.physical_name or "-"
+            asset_sv = asset.schema_validation
+            if asset_sv:
+                if asset_sv.exists is False:
+                    sv_rows.append(f"| `{asset_name}` | - | Asset not found | - | - |")
+                pt = asset_sv.physical_type
+                if pt and (pt.status or "").lower() == "failed":
+                    sv_rows.append(f"| `{asset_name}` | - | Physical type mismatch | `{pt.expected}` | `{pt.actual}` |")
+                for c in asset_sv.missing_columns:
+                    sv_rows.append(f"| `{asset_name}` | `{c}` | Missing column | - | - |")
+                for c in asset_sv.unexpected_columns:
+                    sv_rows.append(f"| `{asset_name}` | `{c}` | Unexpected column | - | - |")
+
+            for col in asset.columns:
+                col_sv = col.schema_validation
+                if not col_sv:
+                    continue
+                col_name = col.name or col.physical_name or "-"
+                t = col_sv.type
+                if t and (t.status or "").lower() == "failed":
+                    sv_rows.append(
+                        f"| `{asset_name}` | `{col_name}` | Type mismatch | "
+                        f"`{t.expected_logical_type or t.expected_physical_type}` | "
+                        f"`{t.actual_logical_type or t.actual_physical_type}` |"
+                    )
+                r = col_sv.required
+                if r and (r.status or "").lower() == "failed":
+                    sv_rows.append(
+                        f"| `{asset_name}` | `{col_name}` | Required column contains nulls | "
+                        f"`not null` | `{r.null_count} nulls` |"
+                    )
+                pk = col_sv.primary_key
+                if pk and (pk.status or "").lower() == "failed":
+                    sv_rows.append(
+                        f"| `{asset_name}` | `{col_name}` | Primary key mismatch | "
+                        f"`{pk.expected_primary_key}` | `{pk.actual_primary_key}` |"
+                    )
+                u = col_sv.unique
+                if u and (u.status or "").lower() == "failed":
+                    sv_rows.append(
+                        f"| `{asset_name}` | `{col_name}` | Uniqueness violated | "
+                        f"`unique` | `{u.duplicate_count} duplicates` |"
+                    )
+
+        if sv_rows:
+            header = ["| Table | Column | Issue | Expected | Actual |", "|---|---|---|---|---|"]
+            result_lines.append("\n**Schema Validation Issues**\n\n" + "\n".join(header + sv_rows))
 
         result_lines.append("")
 
