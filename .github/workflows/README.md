@@ -4,7 +4,7 @@ The pipeline is defined in [`validate-data-contract.yml`](validate-data-contract
 
 | Event | Paths watched | What runs |
 |---|---|---|
-| `pull_request` | `contracts/**`, `.github/workflows/**`, `.github/actions/**`, `.github/scripts/**` | PR flow (validate → create → test → delete) |
+| `pull_request` | `contracts/**` | PR flow (validate → create → test → delete) |
 | `push` to `main` | `contracts/**` | Merge flow (upsert real contracts, then save test results) |
 
 ---

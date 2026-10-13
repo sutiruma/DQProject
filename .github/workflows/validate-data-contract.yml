@@ -4,9 +4,6 @@ on:
   pull_request:
     paths:
       - 'contracts/**'
-      - '.github/workflows/validate-data-contract.yml'
-      - '.github/actions/**'
-      - '.github/scripts/**'
 
   push:
     branches:
