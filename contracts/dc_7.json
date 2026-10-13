@@ -32,28 +32,28 @@
     "dataProduct": "BankingDataProduct",
     "schema": [
         {
-            "name": "BANK_CLIENTS_VIEW1",
-            "physicalName": "BANK1/BANK_CLIENTS_VIEW1",
+            "name": "BANK_CLIENTS",
+            "physicalName": "BANK1/BANK_CLIENTS",
             "physicalType": "table",
             "logicalType": "object",
             "quality": [
                 {
                     "name": "table_row_count",
                     "type": "sql",
-                    "query": "SELECT * FROM BANK1.BANK_CLIENTS_VIEW1;",
+                    "query": "SELECT * FROM BANK1.BANK_CLIENTS;",
                     "mustBe": 5112,
                     "dimension": "completeness"
                 },
                 {
                     "name": "Marital status inconsistent with age",
                     "type": "sql",
-                    "query": "SELECT AGE, MARITAL_STATUS FROM BANK1.BANK_CLIENTS_VIEW1 WHERE AGE < 16 AND MARITAL_STATUS IN ('married','divorced','widowed');",
+                    "query": "SELECT AGE, MARITAL_STATUS FROM BANK1.BANK_CLIENTS WHERE AGE < 16 AND MARITAL_STATUS IN ('married','divorced','widowed');",
                     "mustBeLessThan": 5
                 },
                 {
                     "name": "Contact preference but no phone number",
                     "type": "sql",
-                    "query": "SELECT * FROM BANK1.BANK_CLIENTS_VIEW1 WHERE REGEXP_LIKE(PHONE1, '[0-9]');",
+                    "query": "SELECT * FROM BANK1.BANK_CLIENTS WHERE REGEXP_LIKE(PHONE1, '[0-9]');",
                     "dimension": "conformity",
                     "mustBeLessThan": 5220
                 }
@@ -67,7 +67,7 @@
                         {
                             "name": "Null Value Check for CCN",
                             "type": "sql",
-                            "query": "SELECT * FROM BANK1.BANK_CLIENTS_VIEW1 WHERE CCN IS NULL;",
+                            "query": "SELECT * FROM BANK1.BANK_CLIENTS WHERE CCN IS NULL;",
                             "dimension": "accuracy",
                             "mustBeGreaterThan": 200
                         },
@@ -98,31 +98,6 @@
                     "required": true
                 },
                 {
-                    "name": "ZIP",
-                    "physicalName": "ZIP",
-                    "logicalType": "string",
-                    "quality": [
-                        {
-                            "name": "Invalid ZIP format",
-                            "type": "sql",
-                            "query": "SELECT ZIP FROM BANK1.BANK_CLIENTS_VIEW1 WHERE ZIP IS NOT NULL AND NOT REGEXP_LIKE(TRIM(ZIP),'^[0-9]5$');",
-                            "mustBeLessThan": 3005
-                        },
-                        {
-                            "name": "Invalid ZIP format via Library check",
-                            "type": "library",
-                            "metric": "invalidValues",
-                            "arguments": {
-                                "pattern": "^[0-9]5$"
-                            },
-                            "mustBeLessThan": 2995
-                        }
-                    ],
-                    "primaryKey": false,
-                    "unique": true,
-                    "required": true
-                },
-                {
                     "name": "AGE",
                     "physicalName": "AGE",
                     "logicalType": "string",
@@ -130,24 +105,8 @@
                         {
                             "name": "Implausible customer ages",
                             "type": "sql",
-                            "query": "SELECT AGE FROM BANK1.BANK_CLIENTS_VIEW1 WHERE AGE IS NULL OR AGE < 18 OR AGE > 100;",
+                            "query": "SELECT AGE FROM BANK1.BANK_CLIENTS WHERE AGE IS NULL OR AGE < 18 OR AGE > 100;",
                             "mustBeLessThan": 389
-                        }
-                    ],
-                    "primaryKey": false,
-                    "unique": true,
-                    "required": true
-                },
-                {
-                    "name": "EMAIL",
-                    "physicalName": "EMAIL",
-                    "logicalType": "string",
-                    "quality": [
-                        {
-                            "name": "Invalid email address format",
-                            "type": "sql",
-                            "query": "SELECT EMAIL FROM BANK1.BANK_CLIENTS_VIEW1 WHERE EMAIL IS NOT NULL AND NOT REGEXP_LIKE(TRIM(EMAIL),'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z](2,)$');",
-                            "mustBeLessThan": 5
                         }
                     ],
                     "primaryKey": false,
@@ -162,7 +121,7 @@
                         {
                             "name": "Invalid gender",
                             "type": "sql",
-                            "query": "SELECT GENDER FROM BANK1.BANK_CLIENTS_VIEW1 WHERE GENDER NOT IN ('L','F');",
+                            "query": "SELECT GENDER FROM BANK1.BANK_CLIENTS WHERE GENDER NOT IN ('L','F');",
                             "mustBeLessThan": 3540
                         },
                         {
@@ -190,7 +149,7 @@
                         {
                             "name": "Invalid marital status codes",
                             "type": "sql",
-                            "query": "SELECT MARITAL_STATUS FROM BANK1.BANK_CLIENTS_VIEW1 WHERE MARITAL_STATUS NOT IN ('single','married','divorced','separated','unknown');",
+                            "query": "SELECT MARITAL_STATUS FROM BANK1.BANK_CLIENTS WHERE MARITAL_STATUS NOT IN ('single','married','divorced','separated','unknown');",
                             "mustBeBetween": [
                                 765,
                                 890
@@ -210,10 +169,6 @@
             "value": [
                 "01a0c69c-6c94-750f-9764-f29edd577838"
             ]
-        },
-        {
-            "property": "projectId",
-            "value": "f522068d-7eee-42d4-8cac-d988a3790794"
         }
     ]
 }
