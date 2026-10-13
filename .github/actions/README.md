@@ -8,6 +8,7 @@ Each stage of the pipeline is implemented as a reusable [composite action](https
 | `data-contract-create` | [README](data-contract-create/README.md) | Create or upsert contracts (PR or merge mode) |
 | `data-contract-test` | [README](data-contract-test/README.md) | Trigger and poll test runs |
 | `data-contract-delete` | [README](data-contract-delete/README.md) | Delete ephemeral contracts after PR validation |
+| `data-contract-save-results` | [README](data-contract-save-results/README.md) | After merge, save the PR's test results to the real contracts |
 
 ---
 
