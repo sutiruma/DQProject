@@ -1,0 +1,57 @@
+# data-contract-test
+
+Triggers test runs for ephemeral contracts, polls until completion, and posts a detailed PR comment with per-rule check results and schema validation issues.
+
+**Source**: [`action.yml`](action.yml)  
+**Script**: [`../../scripts/test_contract.py`](../../scripts/test_contract.py)
+
+---
+
+## Inputs
+
+| Input | Required | Description |
+|---|---|---|
+| `contract-ids` | ✅ | Space-separated `project_id:contract_id` pairs (from the create action) |
+| `url` | ✅ | CPD / watsonx base URL |
+| `api-key` | ✅ | IBM Cloud IAM API key |
+| `pr-number` | ✅ | PR number to post the comment on |
+| `repository` | ✅ | Repository in `owner/repo` format |
+| `github-token` | ✅ | GitHub token for posting PR comments |
+
+## Outputs
+
+| Output | Description |
+|---|---|
+| `overall` | `0` = all tests passed, `1` = one or more failures |
+| `body` | Markdown summary posted as a PR comment |
+
+---
+
+## Behaviour
+
+1. Installs `data-intelligence-sdk==2.2.0rc1` from TestPyPI.
+2. Runs `test_contract.py <contract-ids>`.
+3. For each contract, triggers a test run via `test_project_data_contract()`.
+4. Retries up to **3 times** on transient 5xx errors (exponential backoff: 15 s → 30 s → 60 s).
+5. Polls `get_project_data_contract_test_result()` every **10 seconds**, up to **30 times** (5 min max per contract).
+6. Collects per-rule check results and schema validation issues into a Markdown table.
+7. Writes `overall` and `body` to `GITHUB_OUTPUT`.
+8. Posts a success or failure PR comment.
+9. A dedicated "Fail if test failed" step reads `overall` and calls `exit 1` if needed — the script itself always exits `0` to ensure the comment step always runs.
+
+---
+
+## PR comment format
+
+```
+## 🧪 Data Contract Test Run
+
+### ✅ `abc-123` — test completed
+> Run ID: `run-001` | Started: 2024-01-01T10:00:00Z | Ended: 2024-01-01T10:02:00Z | Run by: pipeline
+
+**Check Results**
+
+| Rule | Dataset | Field | Status | Tested | Passed | Failed |
+|---|---|---|---|---|---|---|
+| Null Value Check | BANK_CLIENTS | ACCOUNT_ID | `passed` | 5112 | 5112 | 0 |
+```

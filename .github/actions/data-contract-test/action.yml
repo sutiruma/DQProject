@@ -37,10 +37,7 @@ runs:
     - name: Install data-intelligence-sdk
       shell: bash
       run: |
-        pip install \
-          --index-url https://test.pypi.org/simple/ \
-          --extra-index-url https://pypi.org/simple/ \
-          "data-intelligence-sdk==2.2.0rc1"
+        pip install "$GITHUB_WORKSPACE"/.github/vendor/data_intelligence_sdk-*.whl
 
     - name: Trigger and poll test runs
       id: test
