@@ -23,6 +23,7 @@ Writes GITHUB_OUTPUT:
 
 import json
 import os
+import re
 import sys
 import time
 import requests
@@ -272,7 +273,15 @@ def main() -> int:
         # RESULTS_DIR as a workflow artifact and links it from the PR comment.
         if result and status.lower() == "completed":
             os.makedirs(RESULTS_DIR, exist_ok=True)
-            out_path = os.path.join(RESULTS_DIR, f"test-result_{cid}.json")
+            # Name the file after the canonical contract name (ephemeral contract is
+            # "<name>_PR_<n>") so the merge job can match it to the real contract.
+            contract_name = cid
+            try:
+                ephemeral = provider.get_project_data_contract(project_id, cid).name or cid
+                contract_name = re.sub(r"_PR_\d+$", "", ephemeral)
+            except ValueError as exc:
+                print(f"  WARNING: could not resolve name for {cid}: {exc}", file=sys.stderr)
+            out_path = os.path.join(RESULTS_DIR, f"test-result_{contract_name}.json")
             with open(out_path, "w", encoding="utf-8") as fh:
                 json.dump(result.model_dump(exclude_none=True), fh, indent=2, default=str)
             print(f"  saved test result JSON to {out_path}")
