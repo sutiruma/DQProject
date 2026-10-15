@@ -24,7 +24,7 @@ This action always runs (`if: always()`) — even when the test job fails — gu
 
 ## Behaviour
 
-1. Installs `data-intelligence-sdk==2.2.0rc1` from TestPyPI.
+1. Installs `data-intelligence-sdk==2.3.0` from TestPyPI.
 2. Runs `delete_contract.py <contract-ids>`.
 3. Groups IDs by project and issues one `delete_project_data_contracts()` call per project (batch delete).
 4. The platform deletes DQ rule assets asynchronously before removing the contract itself — the script polls `get_project_data_contract()` for each ID every **10 seconds**, up to **30 times** (5 min max).

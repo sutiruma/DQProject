@@ -31,7 +31,7 @@ If any contract is invalid the job fails, blocking the downstream `create-temp-c
 
 ## Behaviour
 
-1. Installs `data-intelligence-sdk==2.2.0rc1` from TestPyPI.
+1. Installs `data-intelligence-sdk==2.3.0` from TestPyPI.
 2. Iterates over each file in `changed-files` and runs `validate_contract.py` against it.
 3. Collects pass/fail results into a Markdown summary.
 4. Posts the summary as a PR comment via `gh pr comment`.

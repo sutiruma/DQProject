@@ -1,6 +1,6 @@
 # Composite Actions
 
-Each stage of the pipeline is implemented as a reusable [composite action](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action). All four actions install `data-intelligence-sdk==2.2.0rc1` from TestPyPI before running their Python script.
+Each stage of the pipeline is implemented as a reusable [composite action](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action). All four actions install `data-intelligence-sdk==2.3.0` from TestPyPI before running their Python script.
 
 | Action | README | Purpose |
 |---|---|---|
@@ -20,7 +20,7 @@ All four actions install the same package before running:
 pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  "data-intelligence-sdk==2.2.0rc1"
+  "data-intelligence-sdk==2.3.0"
 ```
 
 To upgrade, update the version string in all four `action.yml` files.

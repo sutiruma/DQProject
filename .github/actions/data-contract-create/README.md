@@ -41,7 +41,7 @@ If a contract with the target name already exists it is replaced (`replace_proje
 
 ## Behaviour
 
-1. Installs `data-intelligence-sdk==2.2.0rc1` from TestPyPI.
+1. Installs `data-intelligence-sdk==2.3.0` from TestPyPI.
 2. Runs `create_contract.py --mode <mode> --pr-number <pr-number> <files...>`.
 3. For each file, reads `projectId` from `customProperties`, lists existing contracts, then creates or replaces.
 4. Emits `contract_ids` (space-separated `project_id:contract_id` pairs) to `GITHUB_OUTPUT`.
