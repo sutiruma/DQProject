@@ -80,14 +80,6 @@
     {
       "property": "isDPH",
       "value": true
-    },
-    {
-      "property": "type",
-      "value": "contract"
-    },
-    {
-      "property": "draftId",
-      "value": "id"
     }
   ]
 }
