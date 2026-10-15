@@ -1,0 +1,136 @@
+{
+  "id": "019ce902-e849-7608-82a4-14b43e67c6fc",
+  "kind": "DataContract",
+  "apiVersion": "v3.1.0",
+  "domain": "Sales",
+  "dataProduct": "Sample data product",
+  "version": "1.0.0",
+  "name": "Sample contract",
+  "status": "active",
+  "contractCreatedTs": "2026-03-23T19:58:33.183953Z",
+  "description": {
+    "authoritativeDefinitions": [
+      {
+        "type": "collibra-asset",
+        "url": "https://mantatools.collibra.com/asset/019ce902-e849-7608-82a4-14b43e67c6fc"
+      }
+    ]
+  },
+  "tags": [],
+  "schema": [
+    {
+      "id": "019ce902-e849-7608-82a4-14b43e67c6fc",
+      "name": "WARRANTY_CLAIMS",
+      "physicalName": "VEHICLE_DEMO/WARRANTY_CLAIMS",
+      "physicalType": "table",
+      "properties": [
+        {
+          "name": "SYSROWID",
+          "physicalName": "SYSROWID",
+          "description": "",
+          "required": true,
+          "tags": [],
+          "physicalType": "BIGINT(19)"
+        },
+        {
+          "name": "WARRANTY_STATUS",
+          "physicalName": "WARRANTY_STATUS",
+          "description": "",
+          "required": true,
+          "tags": [],
+          "physicalType": "VARCHAR(50)"
+        },
+        {
+          "name": "CLAIM_ID",
+          "physicalName": "CLAIM_ID",
+          "description": "",
+          "required": true,
+          "tags": [],
+          "physicalType": "INTEGER(10)",
+          "primaryKey": true,
+          "quality": [
+            {
+              "name": "CLAIM_ID should not be null",
+              "type": "sql",
+              "query": "SELECT * FROM VEHICLE_DEMO.WARRANTY_CLAIMS WHERE CLAIM_ID IS NULL;",
+              "dimension": "completeness",
+              "mustBe": 0
+            }
+          ]
+        },
+        {
+          "name": "SUPPLIER_ID",
+          "physicalName": "SUPPLIER_ID",
+          "description": "",
+          "required": true,
+          "tags": [],
+          "physicalType": "VARCHAR(50)"
+        }, 
+        {
+          "name": "REPAIR_COST",
+          "physicalName": "REPAIR_COST",
+          "description": "",
+          "required": true,
+          "tags": [],
+          "physicalType": "DECIMAL(10,2)"
+        },
+        {
+          "name": "CLAIM_DATE",
+          "physicalName": "CLAIM_DATE",
+          "description": "",
+          "required": true,
+          "tags": [],
+          "physicalType": "DATE(10)"
+        },
+        {
+          "name": "VEHICLE_MODEL",
+          "physicalName": "VEHICLE_MODEL",
+          "description": "",
+          "required": true,
+          "tags": [],
+          "physicalType": "VARCHAR(100)"
+        },
+        {
+          "name": "COMPONENT_ID",
+          "physicalName": "COMPONENT_ID",
+          "description": "",
+          "required": true,
+          "tags": [],
+          "physicalType": "VARCHAR(50)"
+        }
+      ],
+      "customProperties": [
+        {
+          "property": "table_type",
+          "value": "TABLE"
+        }
+      ]
+    }
+  ],
+  "servers": [
+    {
+      "id": "server-07f7fd4c",
+      "server": "db2w-ruggyab.us-south.db2w.cloud.ibm.com",
+      "host": "db2w-ruggyab.us-south.db2w.cloud.ibm.com",
+      "type": "db2",
+      "schema": "VEHICLE_DEMO",
+      "port": 50001,
+      "database": "BLUDB"
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "connectionIds",
+      "value": [
+        "019ff56d-cc21-70c0-8d98-9c8e3d90ea81"
+      ]
+    },{
+        "property": "projectId",
+        "value": "c8dd139d-5bd7-41cb-9147-55a7100632f0"
+    },
+    {
+      "property": "isDPH",
+      "value": true
+    }
+  ]
+}
