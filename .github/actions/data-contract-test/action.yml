@@ -40,7 +40,7 @@ runs:
         pip install \
           --index-url https://test.pypi.org/simple/ \
           --extra-index-url https://pypi.org/simple/ \
-          "data-intelligence-sdk==2.2.0rc1"
+          "data-intelligence-sdk==2.3.0"
 
     - name: Trigger and poll test runs
       id: test
@@ -48,18 +48,33 @@ runs:
       env:
         PLATFORM_URL:     ${{ inputs.url }}
         PLATFORM_API_KEY: ${{ inputs.api-key }}
+        RESULTS_DIR:      ${{ github.workspace }}/test-results
       run: |
         python3 ${{ github.action_path }}/../../scripts/test_contract.py \
           ${{ inputs.contract-ids }}
+
+    - name: Upload test result JSON
+      id: upload
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: data-contract-test-results-pr-${{ inputs.pr-number }}
+        path: ${{ github.workspace }}/test-results/*.json
+        if-no-files-found: ignore
+        overwrite: true
 
     - name: Post PR comment (success)
       if: success()
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
-        BODY:     ${{ steps.test.outputs.body }}
+        GH_TOKEN:     ${{ inputs.github-token }}
+        BODY:         ${{ steps.test.outputs.body }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
       run: |
         printf "%b" "$BODY" > /tmp/pr_body.md
+        if [ -n "$ARTIFACT_URL" ]; then
+          printf '\n📎 [Download test result JSON](%s)\n' "$ARTIFACT_URL" >> /tmp/pr_body.md
+        fi
         gh pr comment "${{ inputs.pr-number }}" \
           --body-file /tmp/pr_body.md \
           --repo "${{ inputs.repository }}"
