@@ -17,6 +17,10 @@ inputs:
   api-key:
     description: 'IBM Cloud IAM API key'
     required: true
+  iam-url:
+    description: 'IAM token endpoint (e.g. https://iam.cloud.ibm.com/identity/token). Defaults to the IBM Cloud test IAM endpoint when empty.'
+    required: false
+    default: ''
   pr-number:
     description: 'Pull request number — required when mode is pr'
     required: false
@@ -53,6 +57,7 @@ runs:
       env:
         PLATFORM_URL:     ${{ inputs.url }}
         PLATFORM_API_KEY: ${{ inputs.api-key }}
+        IAM_TOKEN_URL:    ${{ inputs.iam-url }}
       run: |
         python3 ${{ github.action_path }}/../../scripts/create_contract.py \
           --mode "${{ inputs.mode }}" \
