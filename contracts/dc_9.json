@@ -1,53 +1,64 @@
 {
-  "id": "019ce902-e849-7608-82a4-14b43e67c6fc",
-  "kind": "DataContract",
-  "apiVersion": "v3.1.0",
-  "domain": "Sales",
-  "dataProduct": "Sample data product",
   "version": "1.0.0",
+  "apiVersion": "v3.1.0",
+  "kind": "DataContract",
+  "id": "019ce902-e849-7608-82a4-14b43e67c6fc",
   "name": "Sample contract",
   "status": "active",
+  "domain": "Sales",
+  "dataProduct": "Sample data product",
   "contractCreatedTs": "2026-03-23T19:58:33.183953Z",
-  "description": {
-    "authoritativeDefinitions": [
-      {
-        "type": "collibra-asset",
-        "url": "https://mantatools.collibra.com/asset/019ce902-e849-7608-82a4-14b43e67c6fc"
-      }
-    ]
-  },
-  "tags": [],
+  "servers": [
+    {
+      "id": "server-07f7fd4c",
+      "server": "db2w-ruggyab.us-south.db2w.cloud.ibm.com",
+      "host": "db2w-ruggyab.us-south.db2w.cloud.ibm.com",
+      "type": "db2",
+      "schema": "VEHICLE_DEMO",
+      "port": 50001,
+      "database": "BLUDB",
+      "customProperties": [
+        {
+          "property": "database",
+          "value": "BLUDB"
+        },
+        {
+          "property": "schema",
+          "value": "VEHICLE_DEMO"
+        }
+      ]
+    }
+  ],
   "schema": [
     {
       "id": "019ce902-e849-7608-82a4-14b43e67c6fc",
       "name": "WARRANTY_CLAIMS",
       "physicalName": "VEHICLE_DEMO/WARRANTY_CLAIMS",
       "physicalType": "table",
+      "logicalType": "object",
       "properties": [
         {
           "name": "SYSROWID",
           "physicalName": "SYSROWID",
-          "description": "",
-          "required": true,
-          "tags": [],
-          "physicalType": "BIGINT(19)"
+          "logicalType": "integer",
+          "physicalType": "BIGINT(19)",
+          "required": true
         },
         {
           "name": "WARRANTY_STATUS",
           "physicalName": "WARRANTY_STATUS",
-          "description": "",
-          "required": true,
-          "tags": [],
-          "physicalType": "VARCHAR(50)"
+          "logicalType": "string",
+          "physicalType": "VARCHAR(50)",
+          "required": true
         },
         {
           "name": "CLAIM_ID",
           "physicalName": "CLAIM_ID",
-          "description": "",
-          "required": true,
-          "tags": [],
+          "logicalType": "integer",
           "physicalType": "INTEGER(10)",
           "primaryKey": true,
+          "unique": true,
+          "required": true,
           "quality": [
             {
               "name": "CLAIM_ID should not be null",
@@ -61,42 +72,37 @@
         {
           "name": "SUPPLIER_ID",
           "physicalName": "SUPPLIER_ID",
-          "description": "",
-          "required": true,
-          "tags": [],
-          "physicalType": "VARCHAR(50)"
-        }, 
+          "logicalType": "string",
+          "physicalType": "VARCHAR(50)",
+          "required": true
+        },
         {
           "name": "REPAIR_COST",
           "physicalName": "REPAIR_COST",
-          "description": "",
-          "required": true,
-          "tags": [],
-          "physicalType": "DECIMAL(10,2)"
+          "logicalType": "number",
+          "physicalType": "DECIMAL(10,2)",
+          "required": true
         },
         {
           "name": "CLAIM_DATE",
           "physicalName": "CLAIM_DATE",
-          "description": "",
-          "required": true,
-          "tags": [],
-          "physicalType": "DATE(10)"
+          "logicalType": "string",
+          "physicalType": "DATE(10)",
+          "required": true
         },
         {
           "name": "VEHICLE_MODEL",
           "physicalName": "VEHICLE_MODEL",
-          "description": "",
-          "required": true,
-          "tags": [],
-          "physicalType": "VARCHAR(100)"
+          "logicalType": "string",
+          "physicalType": "VARCHAR(100)",
+          "required": true
         },
         {
           "name": "COMPONENT_ID",
           "physicalName": "COMPONENT_ID",
-          "description": "",
-          "required": true,
-          "tags": [],
-          "physicalType": "VARCHAR(50)"
+          "logicalType": "string",
+          "physicalType": "VARCHAR(50)",
+          "required": true
         }
       ],
       "customProperties": [
@@ -107,26 +113,16 @@
       ]
     }
   ],
-  "servers": [
-    {
-      "id": "server-07f7fd4c",
-      "server": "db2w-ruggyab.us-south.db2w.cloud.ibm.com",
-      "host": "db2w-ruggyab.us-south.db2w.cloud.ibm.com",
-      "type": "db2",
-      "schema": "VEHICLE_DEMO",
-      "port": 50001,
-      "database": "BLUDB"
-    }
-  ],
   "customProperties": [
     {
       "property": "connectionIds",
       "value": [
         "019ff56d-cc21-70c0-8d98-9c8e3d90ea81"
       ]
-    },{
-        "property": "projectId",
-        "value": "c8dd139d-5bd7-41cb-9147-55a7100632f0"
+    },
+    {
+      "property": "projectId",
+      "value": "c8dd139d-5bd7-41cb-9147-55a7100632f0"
     },
     {
       "property": "isDPH",
