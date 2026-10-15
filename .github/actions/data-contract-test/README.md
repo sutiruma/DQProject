@@ -29,7 +29,7 @@ Triggers test runs for ephemeral contracts, polls until completion, and posts a 
 
 ## Behaviour
 
-1. Installs `data-intelligence-sdk==2.2.0rc1` from TestPyPI.
+1. Installs `data-intelligence-sdk==2.3.0` from TestPyPI.
 2. Runs `test_contract.py <contract-ids>`.
 3. For each contract, triggers a test run via `test_project_data_contract()`.
 4. Retries up to **3 times** on transient 5xx errors (exponential backoff: 15 s → 30 s → 60 s).
