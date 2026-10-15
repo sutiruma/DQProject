@@ -68,14 +68,14 @@
   ],
   "customProperties": [
     {
-      "property": "connectionIds",
-      "value": [
-        "019eac2f-9c7e-705c-bf08-696c85bf9b0f"
-      ]
+        "property": "connectionIds",
+        "value": [
+            "01a0c69c-6c94-750f-9764-f29edd577838"
+        ]
     },
     {
-      "property": "projectId",
-      "value": "4dc3b3d8-5b0f-4024-9528-e11bf832cfbc"
+        "property": "projectId",
+        "value": "f522068d-7eee-42d4-8cac-d988a3790794"
     },
     {
       "property": "isDPH",
