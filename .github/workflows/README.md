@@ -68,6 +68,7 @@ Configure these in **Settings → Secrets and variables → Actions**:
 |---|---|
 | `PLATFORM_URL` | Base URL of the CPD / watsonx instance (e.g. `https://api.dai.dev.cloud.ibm.com`) |
 | `PLATFORM_API_KEY` | IBM Cloud IAM API key with access to the target project |
+| `IAM_TOKEN_URL` | *(Optional)* IAM token endpoint matching the environment the API key belongs to, e.g. `https://iam.cloud.ibm.com/identity/token`. If unset, the IBM Cloud test endpoint `https://iam.test.cloud.ibm.com/identity/token` is used |
 
 `GITHUB_TOKEN` is provided automatically by GitHub Actions — no manual configuration needed.
 

@@ -38,7 +38,10 @@ from wxdi.data_contracts import DataContractsProvider
 from wxdi.data_contracts.models import DataContractTestRequest
 from wxdi.dq_validator.provider.config import ProviderConfig
 
-IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
+IAM_TOKEN_URL = (
+    os.environ.get("IAM_TOKEN_URL")
+    or "https://iam.test.cloud.ibm.com/identity/token"
+)
 
 MAX_POLLS        = 30
 POLL_INTERVAL    = 10

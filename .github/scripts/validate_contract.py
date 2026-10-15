@@ -35,7 +35,10 @@ _mod  = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 extract_project_id = _mod.extract_project_id
 
-IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
+IAM_TOKEN_URL = (
+    os.environ.get("IAM_TOKEN_URL")
+    or "https://iam.test.cloud.ibm.com/identity/token"
+)
 
 
 def get_bearer_token(api_key: str) -> str:
