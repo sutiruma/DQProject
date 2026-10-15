@@ -49,7 +49,7 @@ Triggers test runs for ephemeral contracts, polls until completion, and posts a 
 ## 🧪 Data Contract Test Run
 
 ### ✅ `abc-123` — test completed
-> Run ID: `run-001` | Started: 2024-01-01T10:00:00Z | Ended: 2024-01-01T10:02:00Z | Run by: pipeline
+> Run ID: `run-001` | Started: 2024-01-01T10:00:00Z | Ended: 2024-01-01T10:02:00Z
 
 **Check Results**
 

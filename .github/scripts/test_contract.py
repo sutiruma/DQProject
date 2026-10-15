@@ -149,7 +149,6 @@ def main() -> int:
         status = result.status if result and result.status else "unknown"
         start  = result.start  if result else "-"
         end    = result.end    if result else "-"
-        run_by = test_resp.run_by or "-"
 
         if status.lower() == "completed":
             result_lines.append(f"### ✅ `{cid}` — test completed")
@@ -158,7 +157,7 @@ def main() -> int:
             result_lines.append(f"### ❌ `{cid}` — test **{status}**")
 
         result_lines.append(
-            f"> Run ID: `{run_id}` | Started: {start} | Ended: {end} | Run by: {run_by}"
+            f"> Run ID: `{run_id}` | Started: {start} | Ended: {end}"
         )
 
         summary = result.summary if result else None
