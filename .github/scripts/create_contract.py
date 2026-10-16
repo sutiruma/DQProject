@@ -58,6 +58,8 @@ _spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
 _mod  = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 extract_target_info = _mod.extract_target_info
+is_valid_draft_id = _mod.is_valid_draft_id
+get_draft_contract_info = _mod.get_draft_contract_info
 
 IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
@@ -130,28 +132,6 @@ def get_dph_catalog_id(dph) -> str:
         raise RuntimeError(f"DPH catalog container ID not found in href: {href!r}")
 
     return catalog_id
-
-
-def get_draft_contract_info(dph, draft_id: str, data_product_id: str = "-") -> tuple:
-    """Fetch draft details and return (existing_contract_id, resolved_contract_terms_id)."""
-    print(f"  Fetching draft {draft_id} ...")
-    resp = dph.get_data_product_draft(
-        data_product_id=data_product_id,
-        draft_id=draft_id,
-    )
-    res = resp.get_result() if hasattr(resp, "get_result") else resp.result
-    contract_terms_list = res.get("contract_terms") or []
-    if not contract_terms_list:
-        raise RuntimeError(f"No contract_terms found in draft {draft_id}")
-
-    target_terms = contract_terms_list[0]
-    resolved_terms_id = target_terms.get("id")
-    if not resolved_terms_id:
-        raise RuntimeError(f"Missing id in contract_terms for draft {draft_id}")
-
-    existing_contract_id = target_terms.get("data_contract_id") or ""
-
-    return existing_contract_id, resolved_terms_id
 
 
 def link_contract_to_data_product_draft(dph, draft_id: str, contract_terms_id: str, contract_id: str, data_product_id: str = "-"):
@@ -265,10 +245,14 @@ def main() -> int:
                         sys.exit(1)
                 catalog_id = dph_catalog_id
 
-            # When type is "contract", draftId is mandatory
+            # When type is "contract", draftId is mandatory, as "<asset_id>@<catalog_id>"
             if is_contract_type and not draft_id:
                 print(f"ERROR: customProperties.draftId is required when isDPH is true and type is 'contract' in {f}.",
                       file=sys.stderr)
+                sys.exit(1)
+            if is_contract_type and not is_valid_draft_id(draft_id):
+                print(f"ERROR: customProperties.draftId '{draft_id}' in {f} is not in "
+                      "'<asset_id>@<catalog_id>' format.", file=sys.stderr)
                 sys.exit(1)
 
             container_id = catalog_id
@@ -291,6 +275,9 @@ def main() -> int:
         if container_type == "catalog":
             existing_draft_contract_id = ""
             resolved_terms_id = ""
+            # data_product_id sent with the contract: the asset id part of draftId
+            # ("<asset_id>@<catalog_id>") for type "contract", otherwise "".
+            draft_asset_id = draft_id.split("@", 1)[0] if is_contract_type else ""
             if is_contract_type:
                 # type "contract": the draft is the source of truth. No name/type search -
                 # replace the contract already attached to the draft, otherwise create
@@ -323,9 +310,14 @@ def main() -> int:
 
             # Catalog contracts are sent as contract_json (parsed from the JSON/YAML file).
             # type is "contract" or "contract_template" (from customProperties.type)
+            # data_product_id is the asset id from draftId for type "contract", else "".
             body = DataContractPrototypeJson(
-                name=name, contract_json=parse_contract_content(content), type=contract_type
+                name=name,
+                contract_json=parse_contract_content(content),
+                type=contract_type,
+                data_product_id=draft_asset_id,
             )
+            print(f"  data_product_id={draft_asset_id!r}")
             if target_replace_id:
                 # PUT / replace operation on existing contract in catalog
                 print(f"  Existing contract found (id={target_replace_id}). Performing PUT/replace operation in catalog ...")

@@ -73,6 +73,37 @@ def extract_project_id(contract_file: str, fallback: str) -> str:
     return fallback
 
 
+def is_valid_draft_id(draft_id: str) -> bool:
+    """True when draft_id is "<asset_id>@<catalog_id>" with both parts non-empty."""
+    parts = draft_id.split("@")
+    return len(parts) == 2 and all(p.strip() for p in parts)
+
+
+def get_draft_contract_info(dph, draft_id: str, data_product_id: str = "-") -> tuple:
+    """Fetch draft details and return (existing_contract_id, resolved_contract_terms_id).
+
+    Raises RuntimeError when the draft has no contract_terms or the terms have no id.
+    """
+    print(f"  Fetching draft {draft_id} ...")
+    resp = dph.get_data_product_draft(
+        data_product_id=data_product_id,
+        draft_id=draft_id,
+    )
+    res = resp.get_result() if hasattr(resp, "get_result") else resp.result
+    contract_terms_list = res.get("contract_terms") or []
+    if not contract_terms_list:
+        raise RuntimeError(f"No contract_terms found in draft {draft_id}")
+
+    target_terms = contract_terms_list[0]
+    resolved_terms_id = target_terms.get("id")
+    if not resolved_terms_id:
+        raise RuntimeError(f"Missing id in contract_terms for draft {draft_id}")
+
+    existing_contract_id = target_terms.get("data_contract_id") or ""
+
+    return existing_contract_id, resolved_terms_id
+
+
 def _parse_bool(val) -> bool:
     if isinstance(val, bool):
         return val
