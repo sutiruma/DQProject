@@ -227,6 +227,7 @@ def main() -> int:
         target = extract_target_info(f)
         is_dph = target.get("is_dph", False)
         contract_type = target.get("type", "").lower()
+        is_contract_type = contract_type == "contract"
         draft_id = target.get("draft_id", "")
         data_product_id = "-"
         project_id = target.get("project_id", "")
@@ -244,7 +245,6 @@ def main() -> int:
                     sys.exit(1)
 
             # When type is "contract", draftId is mandatory
-            is_contract_type = contract_type == "contract"
             if is_contract_type and not draft_id:
                 print(f"ERROR: customProperties.draftId is required when isDPH is true and type is 'contract' in {f}.",
                       file=sys.stderr)
@@ -299,7 +299,8 @@ def main() -> int:
             # Determine target contract ID to replace (draft's attached contract takes priority)
             target_replace_id = existing_draft_contract_id or (existing.id if existing else None)
 
-            body = DataContractPrototypeYaml(name=name, contract_yaml=content)
+            # type is "contract" or "contract_template" (from customProperties.type)
+            body = DataContractPrototypeYaml(name=name, contract_yaml=content, type=contract_type)
             if target_replace_id:
                 # PUT / replace operation on existing contract in catalog
                 print(f"  Existing contract found (id={target_replace_id}). Performing PUT/replace operation in catalog ...")
