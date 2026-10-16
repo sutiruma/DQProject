@@ -5,13 +5,17 @@ Create data contracts in a CPD/watsonx project.
 Two modes:
 
   --mode pr   (PR validation)
-      Creates an ephemeral contract named "<contract_name>_PR_<pr_number>".
-      The contract is used for CI testing only and deleted afterwards.
+      Creates an ephemeral contract named "<contract_name>_PR_<pr_number>"
+      in the project (customProperties.projectId) - always, even for DPH
+      contracts. Used for CI testing only and deleted afterwards.
       Emits contract_ids as "<project_id>:<contract_id>" pairs.
 
   --mode merge  (post-merge upsert)
       Creates or replaces the real contract using the canonical name from
-      the contract file. This is the production upsert path.
+      the contract file. DPH contracts (isDPH=true) go to the DPH catalog and
+      are linked to the draft; all others go to the project. Emits
+      "<project_id>:<contract_id>" pairs, or "catalog:<catalog_id>:<contract_id>"
+      for contracts created in the DPH catalog.
 
 Usage:
     python create_contract.py --mode pr   --pr-number <N> <file1> [<file2> ...]
@@ -30,6 +34,7 @@ Exit codes:
 Writes GITHUB_OUTPUT:
     body         - Markdown summary for PR comment
     contract_ids - Space-separated list of <project_id>:<contract_id> pairs
+                   (DPH catalog: "catalog:<catalog_id>:<contract_id>")
 """
 
 import os
@@ -226,7 +231,9 @@ def main() -> int:
         data_product_id = "-"
         project_id = target.get("project_id", "")
 
-        if is_dph:
+        # Catalog (DPH) is the final state only: PR validation always uses a
+        # temporary contract in the project so the catalog/draft stay untouched.
+        if is_dph and args.mode == "merge":
             if not dph_client:
                 dph_client = get_dph_client(cpd_url, bearer)
             if not dph_catalog_id:
@@ -248,7 +255,8 @@ def main() -> int:
             print(f"[{args.mode}] Using DPH catalog_id={container_id}, contract name='{name}' for {f}")
         else:
             if not project_id:
-                print(f"ERROR: customProperties.projectId not found (and isDPH is not true) in {f}.",
+                print(f"ERROR: customProperties.projectId not found in {f} "
+                      "(required for non-DPH contracts and for PR validation of DPH contracts).",
                       file=sys.stderr)
                 sys.exit(1)
 
@@ -298,10 +306,7 @@ def main() -> int:
                 contract = provider.replace_catalog_data_contract(
                     container_id, target_replace_id, body, validate=True
                 )
-                if args.mode == "pr":
-                    result_lines.append(f"### 🔄 `{f}` — ephemeral DPH contract updated (name: `{name}`, id: `{contract.id}`)")
-                else:
-                    result_lines.append(f"### 🔄 `{f}` — updated in DPH catalog (id: `{contract.id}`)")
+                result_lines.append(f"### 🔄 `{f}` — updated in DPH catalog (id: `{contract.id}`)")
                 print(f"Updated DPH contract {f}  →  name={name}  id={contract.id}")
             else:
                 # POST / create new contract in catalog
@@ -322,10 +327,7 @@ def main() -> int:
                         print(f"ERROR: Failed to link contract {contract.id} to draft {draft_id}: {exc}", file=sys.stderr)
                         sys.exit(1)
 
-                if args.mode == "pr":
-                    result_lines.append(f"### ✅ `{f}` — ephemeral DPH contract created (name: `{name}`, id: `{contract.id}`)")
-                else:
-                    result_lines.append(f"### ✅ `{f}` — created in DPH catalog (id: `{contract.id}`)")
+                result_lines.append(f"### ✅ `{f}` — created in DPH catalog (id: `{contract.id}`)")
                 print(f"Created DPH contract {f}  →  name={name}  id={contract.id}")
         else:
             collection = provider.list_project_data_contracts(container_id, limit=200)
@@ -350,7 +352,9 @@ def main() -> int:
                     result_lines.append(f"### ✅ `{f}` — created (id: `{contract.id}`)")
                 print(f"Created  {f}  →  name={name}  id={contract.id}")
 
-        contract_pairs.append(f"{container_id}:{contract.id}")
+        # Catalog pairs are prefixed so downstream steps use the catalog APIs
+        prefix = "catalog:" if container_type == "catalog" else ""
+        contract_pairs.append(f"{prefix}{container_id}:{contract.id}")
 
     if args.mode == "pr":
         md_title = "## 📦 Data Contract Create (Ephemeral — PR validation)"
