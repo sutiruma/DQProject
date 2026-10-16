@@ -34,8 +34,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from wxdi.data_contracts import DataContractsProvider
 from wxdi.data_contracts.models import DataContractValidationRequest
 from wxdi.dq_validator.provider.config import ProviderConfig
-from wxdi.dph_services import DphV1
-from ibm_cloud_sdk_core.authenticators import BearerTokenAuthenticator
 
 
 # Load contract_utils from the same directory as this script
@@ -129,6 +127,8 @@ def main() -> int:
     if draft_id:
         # DPH type "contract": the draft must exist and have contract terms (with an id)
         try:
+            from wxdi.dph_services import DphV1
+            from ibm_cloud_sdk_core.authenticators import BearerTokenAuthenticator
             dph = DphV1(authenticator=BearerTokenAuthenticator(bearer_token.replace("Bearer ", "").strip()))
             dph.set_service_url(cpd_url)
             _, terms_id = get_draft_contract_info(dph, draft_id)
