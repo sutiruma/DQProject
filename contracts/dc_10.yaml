@@ -11,7 +11,7 @@ schema:
         required: true
         quality:
           - query: SELECT * FROM  AI_MORTGAGE.HOUSE_PRICE WHERE FORM_ID IS NULL;
-            name: FORM_ID_RULE
+            name: FORM_ID_RULE_12345
             mustBe: 0
             type: sql
       - logicalType: string
