@@ -15,7 +15,8 @@ Two modes:
       the contract file. DPH contracts (isDPH=true) go to the DPH catalog and
       are linked to the draft; all others go to the project. Emits
       "<project_id>:<contract_id>" pairs, or "catalog:<catalog_id>:<contract_id>"
-      for contracts created in the DPH catalog.
+      for contracts created in the DPH catalog. The catalog is taken from
+      customProperties.catalogId when present, else resolved via the DPH API.
 
 Usage:
     python create_contract.py --mode pr   --pr-number <N> <file1> [<file2> ...]
@@ -39,6 +40,7 @@ Writes GITHUB_OUTPUT:
 
 import os
 import sys
+import json
 import argparse
 import importlib.util
 import requests
@@ -47,7 +49,7 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from wxdi.data_contracts import DataContractsProvider
-from wxdi.data_contracts.models import DataContractPrototypeYaml
+from wxdi.data_contracts.models import DataContractPrototypeJson, DataContractPrototypeYaml
 from wxdi.dq_validator.provider.config import ProviderConfig
 
 # Load contract_utils from the same directory as this script
@@ -167,6 +169,18 @@ def link_contract_to_data_product_draft(dph, draft_id: str, contract_terms_id: s
     print(f"  Successfully linked data_contract_id={contract_id} to draft {draft_id}")
 
 
+def parse_contract_content(content: str) -> dict:
+    """Parse contract file content (JSON or YAML) into a dict."""
+    try:
+        doc = json.loads(content)
+    except json.JSONDecodeError:
+        import yaml
+        doc = yaml.safe_load(content)
+    if not isinstance(doc, dict):
+        raise RuntimeError("Contract file did not parse to an object")
+    return doc
+
+
 def get_bearer_token(api_key: str) -> str:
     resp = requests.post(
         IAM_TOKEN_URL,
@@ -237,12 +251,19 @@ def main() -> int:
         if is_dph and args.mode == "merge":
             if not dph_client:
                 dph_client = get_dph_client(cpd_url, bearer)
-            if not dph_catalog_id:
-                try:
-                    dph_catalog_id = get_dph_catalog_id(dph_client)
-                except Exception as exc:
-                    print(f"ERROR: Failed to resolve DPH catalog for {f}: {exc}", file=sys.stderr)
-                    sys.exit(1)
+            # customProperties.catalogId (optional) is used directly; otherwise
+            # resolve the default DPH catalog with an extra API call (cached).
+            file_catalog_id = target.get("catalog_id", "")
+            if file_catalog_id:
+                catalog_id = file_catalog_id
+            else:
+                if not dph_catalog_id:
+                    try:
+                        dph_catalog_id = get_dph_catalog_id(dph_client)
+                    except Exception as exc:
+                        print(f"ERROR: Failed to resolve DPH catalog for {f}: {exc}", file=sys.stderr)
+                        sys.exit(1)
+                catalog_id = dph_catalog_id
 
             # When type is "contract", draftId is mandatory
             if is_contract_type and not draft_id:
@@ -250,7 +271,7 @@ def main() -> int:
                       file=sys.stderr)
                 sys.exit(1)
 
-            container_id = dph_catalog_id
+            container_id = catalog_id
             container_type = "catalog"
             print(f"[{args.mode}] Using DPH catalog_id={container_id}, contract name='{name}' for {f}")
         else:
@@ -268,24 +289,12 @@ def main() -> int:
             content = fh.read()
 
         if container_type == "catalog":
-            collection = provider.list_catalog_data_contracts(container_id, limit=200)
-            
-            # Match existing contract by name and type (if type property is present on the asset)
-            def _matches_catalog_dc(dc) -> bool:
-                if dc.name != name:
-                    return False
-                if contract_type:
-                    dc_type = getattr(dc, "type", None) or (getattr(dc, "model_extra", {}) or {}).get("type") or ((getattr(dc, "model_extra", {}) or {}).get("entity", {}).get("ibm_data_contract", {}) or {}).get("type")
-                    if dc_type and str(dc_type).lower() != contract_type:
-                        return False
-                return True
-
-            existing = next((dc for dc in collection.data_contracts if _matches_catalog_dc(dc)), None)
-
-            # In DPH contract mode, check draft for an existing attached contract
             existing_draft_contract_id = ""
             resolved_terms_id = ""
             if is_contract_type:
+                # type "contract": the draft is the source of truth. No name/type search -
+                # replace the contract already attached to the draft, otherwise create
+                # a new one and attach it to the draft's contract terms.
                 try:
                     existing_draft_contract_id, resolved_terms_id = get_draft_contract_info(
                         dph=dph_client,
@@ -295,12 +304,28 @@ def main() -> int:
                 except Exception as exc:
                     print(f"ERROR: Failed to inspect draft {draft_id}: {exc}", file=sys.stderr)
                     sys.exit(1)
+                target_replace_id = existing_draft_contract_id or None
+            else:
+                # type "contract_template": match an existing catalog contract by name and type
+                collection = provider.list_catalog_data_contracts(container_id, limit=200)
 
-            # Determine target contract ID to replace (draft's attached contract takes priority)
-            target_replace_id = existing_draft_contract_id or (existing.id if existing else None)
+                def _matches_catalog_dc(dc) -> bool:
+                    if dc.name != name:
+                        return False
+                    if contract_type:
+                        dc_type = getattr(dc, "type", None) or (getattr(dc, "model_extra", {}) or {}).get("type") or ((getattr(dc, "model_extra", {}) or {}).get("entity", {}).get("ibm_data_contract", {}) or {}).get("type")
+                        if dc_type and str(dc_type).lower() != contract_type:
+                            return False
+                    return True
 
+                existing = next((dc for dc in collection.data_contracts if _matches_catalog_dc(dc)), None)
+                target_replace_id = existing.id if existing else None
+
+            # Catalog contracts are sent as contract_json (parsed from the JSON/YAML file).
             # type is "contract" or "contract_template" (from customProperties.type)
-            body = DataContractPrototypeYaml(name=name, contract_yaml=content, type=contract_type)
+            body = DataContractPrototypeJson(
+                name=name, contract_json=parse_contract_content(content), type=contract_type
+            )
             if target_replace_id:
                 # PUT / replace operation on existing contract in catalog
                 print(f"  Existing contract found (id={target_replace_id}). Performing PUT/replace operation in catalog ...")

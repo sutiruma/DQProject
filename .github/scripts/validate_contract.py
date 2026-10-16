@@ -10,6 +10,8 @@ Environment variables (required):
     PLATFORM_API_KEY - IBM Cloud IAM API key; a fresh bearer token is obtained at runtime
 
 Project ID is read exclusively from customProperties.projectId in the contract file.
+For DPH contracts (isDPH=true) of type "contract", customProperties.draftId is
+also required; validation fails before merge if it is missing.
 
 Exit codes:
     0 - contract is valid
@@ -34,6 +36,7 @@ _spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
 _mod  = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 extract_project_id = _mod.extract_project_id
+extract_target_info = _mod.extract_target_info
 
 IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
@@ -81,6 +84,15 @@ def main() -> int:
             )
         if missing:
             print(f"ERROR: missing required env vars: {', '.join(missing)}", file=sys.stderr)
+        return 1
+
+    target = extract_target_info(contract_file)
+    if target.get("is_dph") and target.get("type", "").lower() == "contract" and not target.get("draft_id"):
+        print(
+            f"ERROR: customProperties.draftId is required when isDPH is true and type is "
+            f"'contract' in {contract_file}.",
+            file=sys.stderr,
+        )
         return 1
 
     print(f"Using project_id={project_id} for {contract_file}")

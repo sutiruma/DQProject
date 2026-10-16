@@ -98,5 +98,6 @@ def extract_target_info(contract_file: str) -> dict:
         "is_dph": _parse_bool(props_map.get("isDPH")),
         "type": _get_str("type", "contract_template"),
         "draft_id": _get_str("draftId"),
+        "catalog_id": _get_str("catalogId"),
         "project_id": _get_str("projectId"),
     }
