@@ -87,7 +87,7 @@ def main() -> int:
                       file=sys.stderr)
                 overall = 1
                 continue
-        project_id, cid = entry.split(":", 1)
+        container_id, cid = entry.split(":", 1)
 
         get_contract = (provider.get_catalog_data_contract if is_catalog
                         else provider.get_project_data_contract)
@@ -95,7 +95,7 @@ def main() -> int:
                          else provider.create_project_data_contract_test_result)
 
         try:
-            name = get_contract(project_id, cid).name
+            name = get_contract(container_id, cid).name
         except ValueError as exc:
             print(f"ERROR: could not look up contract {cid}: {exc}", file=sys.stderr)
             overall = 1
@@ -115,7 +115,7 @@ def main() -> int:
 
         try:
             created = create_result(
-                project_id, cid, DataContractTestResultPrototype(**data)
+                container_id, cid, DataContractTestResultPrototype(**data)
             )
             print(f"Saved  {name} ({cid}): test result id={created.id} status={created.status}")
         except ValueError as exc:
