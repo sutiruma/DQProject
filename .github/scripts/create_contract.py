@@ -60,6 +60,7 @@ _spec.loader.exec_module(_mod)
 extract_target_info = _mod.extract_target_info
 is_valid_draft_id = _mod.is_valid_draft_id
 get_draft_contract_info = _mod.get_draft_contract_info
+_YAML_AVAILABLE = _mod._YAML_AVAILABLE
 
 IAM_TOKEN_URL = "https://iam.test.cloud.ibm.com/identity/token"
 
@@ -77,51 +78,29 @@ def get_dph_client(cpd_url: str, bearer_token: str):
 
 
 def get_dph_catalog_id(dph) -> str:
-    """Fetch default Data Product Hub catalog ID via DphV1.get_initialize_status().
+    """Fetch the default Data Product Hub catalog ID via DphV1.get_initialize_status().
 
-    If the catalog is not yet initialized (404), triggers initialization first,
-    then retries the status check. Extracts the catalog ID from the container.id
-    query parameter in the response href.
+    Extracts the catalog ID from the container.id query parameter in the
+    response href. Raises RuntimeError when DPH is unavailable or not yet
+    initialized — initialization is an operator responsibility and must not
+    be triggered automatically by CI.
     """
     from urllib.parse import urlparse, parse_qs
     from ibm_cloud_sdk_core.api_exception import ApiException
 
-    def _get_status():
-        resp = dph.get_initialize_status()
-        return resp.get_result() if hasattr(resp, "get_result") else resp.result
-
     try:
-        res = _get_status()
+        resp = dph.get_initialize_status()
+        res = resp.get_result() if hasattr(resp, "get_result") else resp.result
     except ApiException as exc:
-        if exc.status_code == 404:
-            # Catalog not yet initialized — trigger initialization and retry
-            print("DPH catalog not found — triggering initialization ...")
-            try:
-                dph.initialize(
-                    include=["delivery_methods", "data_product_samples",
-                             "domains_multi_industry", "workflows"]
-                )
-            except ApiException as init_exc:
-                raise RuntimeError(
-                    f"DPH initialization failed (status={init_exc.status_code}): {init_exc.message}"
-                ) from init_exc
-            print("DPH initialization triggered — retrying status check ...")
-            try:
-                res = _get_status()
-            except ApiException as retry_exc:
-                raise RuntimeError(
-                    f"DPH status check failed after initialization (status={retry_exc.status_code}): {retry_exc.message}"
-                ) from retry_exc
-        else:
-            raise RuntimeError(
-                f"DPH is not available on this platform (status={exc.status_code}): {exc.message}. "
-                "Ensure the PLATFORM_URL points to an instance with DPH initialized."
-            ) from exc
+        raise RuntimeError(
+            f"DPH status check failed (status={exc.status_code}): {exc.message}. "
+            "Ensure the PLATFORM_URL points to a fully initialized DPH instance."
+        ) from exc
 
     status = res.get("status", "")
     if status != "succeeded":
         raise RuntimeError(
-            f"DPH initialization has not succeeded (status={status}). "
+            f"DPH initialization has not succeeded (status={status!r}). "
             "Ensure the DPH instance is fully initialized before running contracts."
         )
 
@@ -154,6 +133,11 @@ def parse_contract_content(content: str) -> dict:
     try:
         doc = json.loads(content)
     except json.JSONDecodeError:
+        if not _YAML_AVAILABLE:
+            raise RuntimeError(
+                "Contract file is not valid JSON and PyYAML is not installed — "
+                "install pyyaml to support YAML contract files."
+            )
         import yaml
         doc = yaml.safe_load(content)
     if not isinstance(doc, dict):
@@ -176,6 +160,28 @@ def get_bearer_token(api_key: str) -> str:
     if not token:
         raise RuntimeError("IAM response did not contain access_token")
     return f"Bearer {token}"
+
+
+def _get_catalog_dc_type(dc) -> str:
+    """Return the lowercased type string from a catalog DataContract, or "".
+
+    DataContract has a declared `type` field that is populated when the server
+    returns the flat OpenAPI shape.  In practice the catalog API returns the
+    nested CAMS asset shape instead, where `type` is not promoted by the SDK's
+    _promote_nested_fields validator — so dc.type is None for real responses.
+    The actual value lives in the nested path:
+        model_extra["entity"]["ibm_data_contract"]["type"]
+    The flat dc.type check is kept as a forward-compatibility fallback in case
+    a future SDK version starts promoting the field.
+    """
+    # Flat shape (promoted by SDK — future-proofing)
+    flat = getattr(dc, "type", None)
+    if flat:
+        return str(flat).lower()
+    # Nested CAMS asset shape (current real API response)
+    entity = ((getattr(dc, "model_extra", None) or {}).get("entity") or {})
+    nested = (entity.get("ibm_data_contract") or {}).get("type")
+    return str(nested).lower() if nested else ""
 
 
 def main() -> int:
@@ -296,16 +302,14 @@ def main() -> int:
                 # type "contract_template": match an existing catalog contract by name and type
                 collection = provider.list_catalog_data_contracts(container_id, limit=200)
 
-                def _matches_catalog_dc(dc) -> bool:
-                    if dc.name != name:
-                        return False
-                    if contract_type:
-                        dc_type = getattr(dc, "type", None) or (getattr(dc, "model_extra", {}) or {}).get("type") or ((getattr(dc, "model_extra", {}) or {}).get("entity", {}).get("ibm_data_contract", {}) or {}).get("type")
-                        if dc_type and str(dc_type).lower() != contract_type:
-                            return False
-                    return True
-
-                existing = next((dc for dc in collection.data_contracts if _matches_catalog_dc(dc)), None)
+                existing = next(
+                    (
+                        dc for dc in collection.data_contracts
+                        if dc.name == name
+                        and (not contract_type or _get_catalog_dc_type(dc) in ("", contract_type))
+                    ),
+                    None,
+                )
                 target_replace_id = existing.id if existing else None
 
             # Catalog contracts are sent as contract_json (parsed from the JSON/YAML file).
@@ -342,7 +346,51 @@ def main() -> int:
                             contract_id=contract.id,
                         )
                     except Exception as exc:
-                        print(f"ERROR: Failed to link contract {contract.id} to draft {draft_id}: {exc}", file=sys.stderr)
+                        # The catalog contract was created but linking to the draft
+                        # failed. Roll back by deleting the orphaned contract.
+                        print(
+                            f"ERROR: Failed to link contract {contract.id} to draft {draft_id}: {exc}",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"  Rolling back: deleting orphaned catalog contract {contract.id} ...",
+                            file=sys.stderr,
+                        )
+                        try:
+                            provider.delete_catalog_data_contracts(
+                                container_id,
+                                data_contract_ids=contract.id,
+                            )
+                            print(f"  Rollback succeeded: contract {contract.id} deleted.")
+                            result_lines.append(
+                                f"### ❌ `{f}` — catalog contract created but link to draft failed "
+                                f"(rolled back, contract `{contract.id}` deleted)."
+                            )
+                        except Exception as del_exc:
+                            # Rollback itself failed — log the orphan ID so it can be
+                            # cleaned up manually.
+                            orphan_pair = f"catalog:{container_id}:{contract.id}"
+                            print(
+                                f"  ⚠️  Rollback failed: {del_exc}\n"
+                                f"  ORPHANED CATALOG CONTRACT — delete manually: {orphan_pair}",
+                                file=sys.stderr,
+                            )
+                            result_lines.append(
+                                f"### ❌ `{f}` — catalog contract created but NOT linked to draft, "
+                                f"and rollback failed (orphan id: `{contract.id}`, catalog: `{container_id}`). "
+                                f"**Delete manually before re-running.**"
+                            )
+                        # Flush partial summary to GITHUB_OUTPUT before exiting so
+                        # the error is visible in the PR comment even on failure.
+                        github_output = os.environ.get("GITHUB_OUTPUT", "")
+                        if github_output:
+                            with open(github_output, "a") as _out:
+                                _out.write("body<<EOF\n")
+                                _out.write(
+                                    "## 📦 Data Contract Create\n\n"
+                                    + "\n\n".join(result_lines)
+                                    + "\n\nEOF\n"
+                                )
                         sys.exit(1)
 
                 result_lines.append(f"### ✅ `{f}` — created in DPH catalog (id: `{contract.id}`)")

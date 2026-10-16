@@ -5,6 +5,7 @@ Shared utilities for data contract scripts.
 
 import json
 import os
+import re
 
 try:
     import yaml
@@ -73,10 +74,18 @@ def extract_project_id(contract_file: str, fallback: str) -> str:
     return fallback
 
 
+# UUID v4 pattern: 8-4-4-4-12 lowercase hex digits separated by hyphens.
+_UUID_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+)
+
+
 def is_valid_draft_id(draft_id: str) -> bool:
-    """True when draft_id is "<asset_id>@<catalog_id>" with both parts non-empty."""
+    """True when draft_id is "<asset_uuid>@<catalog_uuid>" with both parts valid UUIDs."""
     parts = draft_id.split("@")
-    return len(parts) == 2 and all(p.strip() for p in parts)
+    if len(parts) != 2:
+        return False
+    return all(_UUID_RE.match(p.strip().lower()) for p in parts)
 
 
 def get_draft_contract_info(dph, draft_id: str, data_product_id: str = "-") -> tuple:
