@@ -11,7 +11,7 @@
         {
             "server": "banking-db",
             "type": "db2",
-            "description": "DB2 production database for client accounts",
+            "description": "DB2 production database for client accounts (updated)",
             "environment": "prod",
             "host": "169.44.151.75",
             "port": 50000,
@@ -177,6 +177,14 @@
         {
             "property": "isDPH",
             "value": true
+        },
+        {
+            "property": "draftId",
+            "value": "01a14422-19d6-7636-adca-8f8c7bec8d63@019fd294-95dc-71bf-88be-e51acedea238"
+        },
+        {
+            "property": "type",
+            "value": "contract"
         }
     ]
 }
