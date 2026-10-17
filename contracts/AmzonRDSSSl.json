@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "apiVersion": "v3.1.0",
+  "kind": "DataContract",
+  "id": "Bank_contract_001",
+  "name": "BANK_transaction_contract",
+  "status": "active",
+  "domain": "Accounting and Finance: Financial Reporting",
+  "tenant": "banking_department",
+  "servers": [
+    {
+      "server": "banking-db",
+      "type": "db2",
+      "description": "DB2 production database for client accounts",
+      "environment": "prod",
+      "host": "conops-rds-oracle-1.csf2wqyc27ft.us-east-1.rds.amazonaws.com",
+      "port": 50000,
+      "database": "DATABASE",
+      "schema": "TM_IKC_MDI",
+      "customProperties": [
+        {
+          "property": "database",
+          "value": "DATABASE"
+        },
+        {
+          "property": "schema",
+          "value": "TM_IKC_MDI"
+        }
+      ]
+    }
+  ],
+  "dataProduct": "BankingDataProduct",
+  "schema": [
+    {
+      "name": "SCALAR_FUNCTIONS_DB2",
+      "physicalName": "TM_IKC_MDI/SCALAR_FUNCTIONS_DB2",
+      "physicalType": "table",
+      "logicalType": "object",
+      "quality": [
+        {
+          "name": "table_row_counts",
+          "type": "sql",
+          "query": "SELECT * FROM TM_IKC_MDI.SCALAR_FUNCTIONS_DB2;",
+          "mustBe": 10,
+          "dimension": "completeness"
+        }
+      ],
+      "properties": [
+        {
+          "name": "VARCHAR_LCASE",
+          "physicalName": "VARCHAR_LCASE",
+          "logicalType": "integer",
+          "quality": [
+            {
+              "name": "Null Value Checks for SCALAR",
+              "type": "sql",
+              "query": "SELECT * FROM TM_IKC_MDI.SCALAR_FUNCTIONS_DB2 where INT_BASE>-7 and VARCHAR_LCASE IS NOT NULL and INT_SUM=-25;",
+              "dimension": "accuracy",
+              "mustBeGreaterThan": 3
+            }
+          ],
+          "primaryKey": false,
+          "unique": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "connectionIds",
+      "value": [
+        "01a0cebe-92e5-754e-9ffa-98b3d5bd28dc"
+      ]
+    },
+    {
+      "property": "projectId",
+      "value": "4dc3b3d8-5b0f-4024-9528-e11bf832cfbc"
+    }
+  ]
+}
