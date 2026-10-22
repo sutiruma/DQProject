@@ -3,6 +3,7 @@ schema:
     physicalName: AI_MORTGAGE/HOUSE_PRICE
     name: HOUSE_PRICE
     physicalType: application/x-ibm-rel-table
+    description: description
     properties:
       - logicalType: string
         physicalName: FORM_ID
