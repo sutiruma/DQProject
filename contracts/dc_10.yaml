@@ -1,0 +1,75 @@
+schema:
+  - logicalType: object
+    physicalName: AI_MORTGAGE/HOUSE_PRICE
+    name: HOUSE_PRICE
+    physicalType: application/x-ibm-rel-table
+    description: description
+    properties:
+      - logicalType: string
+        physicalName: FORM_ID
+        name: FORM_ID
+        physicalType: string
+        required: true
+        quality:
+          - query: SELECT * FROM  AI_MORTGAGE.HOUSE_PRICE WHERE FORM_ID IS NULL;
+            name: FORM_ID_RULE_123456
+            mustBe: 0
+            type: sql
+      - logicalType: string
+        physicalName: NAME
+        name: NAME
+        physicalType: string
+        required: false
+      - logicalType: string
+        physicalName: EMAIL_ADDRESS
+        name: EMAIL_ADDRESS
+        physicalType: string
+        required: false
+      - logicalType: string
+        physicalName: PROPERTY_CITY
+        name: PROPERTY_CITY
+        physicalType: string
+        required: false
+      - logicalType: string
+        physicalName: PROPERTY_STATE
+        name: PROPERTY_STATE
+        physicalType: string
+        required: false
+      - logicalType: number
+        physicalName: PROPERTY_VALUE
+        name: PROPERTY_VALUE
+        physicalType: number
+        required: false
+apiVersion: v3.1.0
+servers:
+  - schema: AI_MORTGAGE
+    server: DB2 connection
+    database: BLUDB
+    customProperties:
+      - property: command_timeout
+        value: '600'
+      - property: inherit_access_token
+        value: 'false'
+      - property: ssl
+        value: 'true'
+    port: 50001
+    host: db2w-ruggyab.us-south.db2w.cloud.ibm.com
+    type: db2
+kind: DataContract
+domain: Distribution Channel
+name: House price contract
+id: 019ff573-25f0-7487-b2ed-d47a6404f56f@019fd294-95dc-71bf-88be-e51acedea238
+version: 1.2.3
+status: active
+customProperties:
+  - property: projectId
+    value: c8dd139d-5bd7-41cb-9147-55a7100632f0
+  - property: connectionIds
+    value:
+      - 019ff56d-cc21-70c0-8d98-9c8e3d90ea81
+  - property: isDPH
+    value: true
+  - property: draftId
+    value: 01a14422-19d6-7636-adca-8f8c7bec8d63@019fd294-95dc-71bf-88be-e51acedea238
+  - property: type
+    value: contract
