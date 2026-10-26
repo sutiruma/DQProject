@@ -1,0 +1,64 @@
+version: 1.0.0
+apiVersion: v3.0.2
+kind: DataContract
+id: Bank_contract_001
+name: BANK_transaction_contract
+status: active
+domain: 'Accounting and Finance: Financial Reporting'
+tenant: banking_department
+servers:
+  - server: banking-db
+    type: db2
+    description: DB2 production database for client accounts
+    environment: prod
+    host: db2w-ruggyab.us-south.db2w.cloud.ibm.com
+    port: 50001
+    database: BLUDB
+    schema: VEHICLE_DEMO
+    customProperties:
+      - property: database
+        value: BLUDB
+      - property: schema
+        value: VEHICLE_DEMO
+schema:
+  - name: VEHICLE_DEMO
+    physicalType: table
+    physicalName: VEHICLE_DEMO/WARRANTY_CLAIMS
+    logicalType: object
+    quality:
+      - name: table_row_count
+        type: sql
+        query: SELECT * FROM VEHICLE_DEMO.WARRANTY_CLAIMS;
+        mustBeGreaterThan: 6077
+    properties:
+      - name: WARRANTY_STATUS
+        physicalName: WARRANTY_STATUS
+        logicalType: string
+        quality:
+          - name: Null Value Check for CCN
+            type: sql
+            query: >-
+              SELECT * FROM VEHICLE_DEMO.WARRANTY_CLAIMS WHERE WARRANTY_STATUS
+              IS 'Completed';
+            mustBeGreaterThan: 900
+      - name: CLAIM_ID
+        physicalName: CLAIM_ID
+        logicalType: string
+        quality:
+          - name: CLAIM_ID have valid numbers
+            type: sql
+            query: >-
+              SELECT * FROM VEHICLE_DEMO.WARRANTY_CLAIMS WHERE CLAIM_ID >
+              '7000';
+            mustBeGreaterThan: 5112
+        primaryKey: true
+        unique: true
+        required: true
+customProperties:
+  - property: remediationAgentRequired
+    value: 'true'
+  - property: connectionIds
+    value:
+      - 01a1794d-e7a2-72b7-83ad-dfb2416ea1fe
+  - property: projectId
+    value: c08ca039-9f4c-4bfe-90d2-18200777c379
