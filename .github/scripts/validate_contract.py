@@ -15,7 +15,14 @@ Environment variables:
     IAM_TOKEN_URL       - optional token endpoint override (cloud environments)
 A fresh bearer token is obtained at runtime via wxdi.common.auth.
 
-Project ID is read exclusively from customProperties.projectId in the contract file.
+customProperties.projectId is required for every contract, including DPH contracts
+(isDPH=true). Validation always runs against the project so that schema and rule
+errors are caught before merge, regardless of where the contract ultimately lives.
+
+For DPH contracts of type "contract", customProperties.draftId is also required,
+in "<asset_id>@<catalog_id>" format. Validation additionally checks that the draft
+exists and has contract terms — failing early if it is missing, malformed, or has
+no contract terms id.
 
 Exit codes:
     0 - contract is valid
@@ -32,6 +39,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from wxdi.data_contracts import DataContractsProvider
 from wxdi.data_contracts.models import DataContractValidationRequest
 from wxdi.dq_validator.provider.config import ProviderConfig
+
 
 # Load contract_utils from the same directory as this script
 _utils_path = os.path.join(os.path.dirname(__file__), "contract_utils.py")
@@ -51,19 +59,41 @@ def main() -> int:
 
     cpd_url  = os.environ.get("PLATFORM_URL", "").rstrip("/")
 
-    # Project ID comes exclusively from customProperties.projectId in the file
+    # projectId is required for all contracts — DPH and non-DPH alike.
+    # Validation always runs against the project (validate_project_data_contract)
+    # so schema and rule errors are caught before merge.
     project_id = extract_project_id(contract_file, "")
 
     if not cpd_url or not project_id:
         missing = [n for n, v in [("PLATFORM_URL", cpd_url)] if not v]
         if not project_id:
             print(
-                f"ERROR: customProperties.projectId not found in {contract_file}.",
+                f"ERROR: customProperties.projectId not found in {contract_file}. "
+                f"projectId is required for all contracts, including DPH contracts.",
                 file=sys.stderr,
             )
         if missing:
             print(f"ERROR: missing required env vars: {', '.join(missing)}", file=sys.stderr)
         return 1
+
+    target = extract_target_info(contract_file)
+    draft_id = ""  # set only for DPH type "contract"; triggers the draft check below
+    if target.get("is_dph") and target.get("type", "").lower() == "contract":
+        draft_id = target.get("draft_id", "")
+        if not draft_id:
+            print(
+                f"ERROR: customProperties.draftId is required when isDPH is true and type is "
+                f"'contract' in {contract_file}.",
+                file=sys.stderr,
+            )
+            return 1
+        if not is_valid_draft_id(draft_id):
+            print(
+                f"ERROR: customProperties.draftId '{draft_id}' in {contract_file} is not in "
+                f"'<asset_id>@<catalog_id>' format.",
+                file=sys.stderr,
+            )
+            return 1
 
     print(f"Using project_id={project_id} for {contract_file}")
 
@@ -72,6 +102,19 @@ def main() -> int:
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+
+    if draft_id:
+        # DPH type "contract": the draft must exist and have contract terms (with an id)
+        try:
+            from wxdi.dph_services import DphV1
+            from ibm_cloud_sdk_core.authenticators import BearerTokenAuthenticator
+            dph = DphV1(authenticator=BearerTokenAuthenticator(bearer_token.replace("Bearer ", "").strip()))
+            dph.set_service_url(cpd_url)
+            _, terms_id = get_draft_contract_info(dph, draft_id)
+        except Exception as exc:
+            print(f"ERROR: draft {draft_id} in {contract_file} is not usable: {exc}", file=sys.stderr)
+            return 1
+        print(f"Draft OK: contract_terms_id={terms_id}")
 
     try:
         with open(contract_file, "r", encoding="utf-8") as fh:
