@@ -4,12 +4,12 @@ The scripts in this directory are the core logic behind each composite action. T
 
 | Script | Purpose |
 |---|---|
-| [`contract_utils.py`](contract_utils.py) | Shared utility — extracts `projectId` from a contract file |
-| [`validate_contract.py`](validate_contract.py) | Validate a single contract against the platform |
-| [`create_contract.py`](create_contract.py) | Create or upsert contracts (PR or merge mode) |
+| [`contract_utils.py`](contract_utils.py) | Shared utilities — parses `customProperties`, extracts `projectId`, validates DPH draft IDs |
+| [`validate_contract.py`](validate_contract.py) | Validate a single contract against the platform; for DPH contracts also validates `draftId` and checks the draft exists |
+| [`create_contract.py`](create_contract.py) | Create or upsert contracts (PR or merge mode); merge mode routes DPH contracts to the catalog and links them to the draft |
 | [`test_contract.py`](test_contract.py) | Trigger and poll test runs |
 | [`delete_contract.py`](delete_contract.py) | Delete ephemeral contracts |
-| [`save_test_results.py`](save_test_results.py) | Save PR test results to the real contracts after merge |
+| [`save_test_results.py`](save_test_results.py) | Save PR test results to the real contracts after merge; handles both project and DPH catalog contracts |
 
 ---
 
@@ -18,10 +18,7 @@ The scripts in this directory are the core logic behind each composite action. T
 ### Install the SDK
 
 ```bash
-pip install \
-  --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ \
-  "data-intelligence-sdk==2.3.0"
+pip install "data-intelligence-sdk==2.3.0"
 ```
 
 ### Environment variables (required by all scripts)
@@ -29,18 +26,42 @@ pip install \
 | Variable | Description |
 |---|---|
 | `PLATFORM_URL` | Base URL of the CPD / watsonx instance (e.g. `https://api.dai.dev.cloud.ibm.com`) |
-| `PLATFORM_API_KEY` | IBM Cloud IAM API key |
+| `PLATFORM_ENV` | *(Optional)* `ibm_cloud` (default), `aws_cloud`, `gov_cloud` or `on_prem` |
+| `PLATFORM_API_KEY` | API key. Required for cloud environments; for `on_prem` use it or `PLATFORM_USERNAME` + `PLATFORM_PASSWORD` |
+| `PLATFORM_USERNAME` | *(`on_prem` only, required there)* Username |
+| `PLATFORM_PASSWORD` | *(`on_prem` only)* Password, when no API key is used |
+| `PLATFORM_ACCOUNT_ID` | *(`aws_cloud` only, required there)* Account ID |
+| `IAM_TOKEN_URL` | *(Optional, cloud only)* Token endpoint override. For `ibm_cloud` defaults to `https://iam.test.cloud.ibm.com/identity/token` (use `https://iam.cloud.ibm.com/identity/token` for production); other cloud types use the SDK default |
+
+`PLATFORM_URL` is the platform API URL. For `on_prem` it is also the host used for authentication (`/icp4d-api/v1/authorize` is appended).
 
 ```bash
+# IBM Cloud
 export PLATFORM_URL="https://api.dai.dev.cloud.ibm.com"
 export PLATFORM_API_KEY="your-iam-api-key"
+export IAM_TOKEN_URL="https://iam.cloud.ibm.com/identity/token"   # optional
+
+# On-prem (Cloud Pak for Data)
+export PLATFORM_ENV="on_prem"
+export PLATFORM_URL="https://cpd.example.com"
+export PLATFORM_USERNAME="admin"
+export PLATFORM_PASSWORD="..."        # or PLATFORM_API_KEY
 ```
 
 ---
 
 ## `contract_utils.py`
 
-Shared utility module. Provides `extract_project_id(contract_file, fallback)` which reads `customProperties.projectId` from a contract file (JSON or YAML). All other scripts load this module at runtime via `importlib` — it is not called directly.
+Shared utility module loaded at runtime via `importlib` by all other scripts — it is not called directly.
+
+| Function | Description |
+|---|---|
+| `extract_custom_properties(contract_file)` | Parses a contract file (JSON or YAML) and returns its top-level `customProperties` list |
+| `extract_project_id(contract_file, fallback)` | Returns `customProperties.projectId`, or `fallback` when not found |
+| `extract_target_info(contract_file)` | Returns a dict with `is_dph`, `type`, `draft_id`, `catalog_id`, and `project_id` from `customProperties` |
+| `is_valid_draft_id(draft_id)` | Returns `True` when `draft_id` is in `"<asset_uuid>@<catalog_uuid>"` format |
+| `get_bearer_token()` | Builds an `AuthConfig` from the `PLATFORM_*` environment variables, gets a token through `wxdi.common.auth.AuthProvider` and returns `"Bearer <token>"` |
+| `get_draft_contract_info(dph, draft_id)` | Fetches a DPH draft and returns `(existing_contract_id, contract_terms_id)` |
 
 ---
 
@@ -60,10 +81,13 @@ python .github/scripts/validate_contract.py contracts/dc.yaml
 
 ### Behaviour
 
-1. Reads `projectId` from the contract's `customProperties`.
-2. Exchanges `PLATFORM_API_KEY` for a short-lived IBM Cloud IAM bearer token.
-3. Calls `DataContractsProvider.validate_project_data_contract()` with the contract content.
-4. Prints `VALID` or `INVALID` with a list of errors.
+1. Reads `projectId` from `customProperties` (required for all contracts, including DPH).
+2. For DPH contracts (`isDPH=true`) with `type=contract`:
+   - Validates that `customProperties.draftId` is present and in `<asset_id>@<catalog_id>` format.
+   - Checks the draft exists and has contract terms with an `id` via `DphV1`.
+3. Obtains a short-lived bearer token for `PLATFORM_ENV` via `wxdi.common.auth` (see environment variables above).
+4. Calls `DataContractsProvider.validate_project_data_contract()` with the contract content.
+5. Prints `VALID` or `INVALID` with a list of errors.
 
 ### Exit codes
 
@@ -95,11 +119,18 @@ python .github/scripts/create_contract.py --mode merge contracts/dc.yaml contrac
 
 ### Behaviour
 
-- Reads `projectId` from each file's `customProperties`.
-- Lists existing contracts in the project (`limit=200`).
-- If a contract with the target name exists → replaces it (`replace_project_data_contract`).
-- If not → creates it (`create_project_data_contract`).
-- Writes `contract_ids` (space-separated `project_id:contract_id` pairs) and a Markdown `body` to `GITHUB_OUTPUT` when that env var is set.
+**PR mode** — always targets the project (`customProperties.projectId`), even for DPH contracts. The real catalog/draft is never touched during PR validation.
+
+**Merge mode** — routes by `customProperties.isDPH`:
+- **`isDPH=false` (or absent)** — upserts in the project (`projectId`): replaces an existing contract by name or creates a new one.
+- **`isDPH=true`** — upserts in the DPH catalog:
+  - Resolves the catalog from `customProperties.catalogId` when present, otherwise fetches it via `DphV1.get_initialize_status()`.
+  - For `type=contract`: looks up the draft via `customProperties.draftId` (`<asset_id>@<catalog_id>`), replaces or creates the catalog contract, then links it to the draft's contract terms.
+  - For `type=contract_template`: matches an existing catalog contract by name and type, replacing or creating as needed.
+
+Writes to `GITHUB_OUTPUT`:
+- `contract_ids` — space-separated pairs: `project_id:contract_id` for project contracts, `catalog:<catalog_id>:<contract_id>` for DPH catalog contracts.
+- `body` — Markdown summary for the PR comment.
 
 ### Exit codes
 
@@ -184,7 +215,7 @@ Saves the test results from a merged PR against the real contracts, using `POST 
 python .github/scripts/save_test_results.py --results-dir <dir> <project_id:contract_id> [<project_id:contract_id> ...]
 ```
 
-`<dir>` is the folder holding the `test-result_<name>.json` files written by `test_contract.py` (the unzipped PR artifact). Each entry is a `project_id:contract_id` pair from `create_contract.py --mode merge`.
+`<dir>` is the folder holding the `test-result_<name>.json` files written by `test_contract.py` (the unzipped PR artifact). Each entry is a `project_id:contract_id` or `catalog:<catalog_id>:<contract_id>` pair as emitted by `create_contract.py --mode merge`.
 
 **Example**
 
@@ -194,10 +225,11 @@ python .github/scripts/save_test_results.py --results-dir ./test-results abc123:
 
 ### Behaviour
 
-1. Looks up each contract's name with `get_project_data_contract()`.
-2. Reads `<dir>/test-result_<name>.json`. If the file does not exist, the contract is skipped.
-3. Removes the top-level `id` and `href`, then calls `create_project_data_contract_test_result()`.
-4. Prints the new test result ID and status.
+1. Parses each entry: `project_id:contract_id` for project contracts, `catalog:<catalog_id>:<contract_id>` for DPH catalog contracts.
+2. Looks up the contract's name (`get_project_data_contract()` or `get_catalog_data_contract()`).
+3. Reads `<dir>/test-result_<name>.json`. If the file does not exist, the contract is skipped.
+4. Removes the top-level `id` and `href`, then calls `create_project_data_contract_test_result()` or `create_catalog_data_contract_test_result()`.
+5. Prints the new test result ID and status.
 
 ### Exit codes
 
