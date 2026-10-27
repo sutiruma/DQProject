@@ -187,13 +187,8 @@ def main() -> int:
             def _check_status(chk):
                 return (chk.results.status if chk.results else None) or "-"
 
-            any_error = any(_check_status(c).lower() == "error" for _, _, c in dq_checks)
-            if any_error:
-                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed | Message |",
-                        "|---|---|---|---|---|---|---|---|"]
-            else:
-                rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed |",
-                        "|---|---|---|---|---|---|---|"]
+            rows = ["| Rule | Dataset | Field | Status | Tested | Passed | Failed |",
+                    "|---|---|---|---|---|---|---|"]
 
             for dataset, field, chk in dq_checks:
                 res    = chk.results
@@ -201,12 +196,7 @@ def main() -> int:
                 tested = res.tested_record_count if res and res.tested_record_count is not None else "-"
                 passed = res.passed_record_count if res and res.passed_record_count is not None else "-"
                 failed = res.failed_record_count if res and res.failed_record_count is not None else "-"
-                row = f"| {rule} | {dataset} | {field} | `{_check_status(chk)}` | {tested} | {passed} | {failed} |"
-                if any_error:
-                    logs = (chk.model_extra or {}).get("logs") or []
-                    msg  = logs[0].get("message", "") if logs and isinstance(logs[0], dict) else ""
-                    row  = row[:-1] + f" {msg} |"
-                rows.append(row)
+                rows.append(f"| {rule} | {dataset} | {field} | `{_check_status(chk)}` | {tested} | {passed} | {failed} |")
 
             result_lines.append("\n**Check Results**\n\n" + "\n".join(rows))
 
