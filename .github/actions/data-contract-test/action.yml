@@ -71,7 +71,7 @@ runs:
         PLATFORM_PASSWORD:   ${{ inputs.password }}
         PLATFORM_ACCOUNT_ID: ${{ inputs.account-id }}
         IAM_TOKEN_URL:       ${{ inputs.iam-url }}
-        RESULTS_DIR:      ${{ github.workspace }}/test-results
+        RESULTS_DIR:         ${{ github.workspace }}/test-results
       run: |
         python3 ${{ github.action_path }}/../../scripts/test_contract.py \
           ${{ inputs.contract-ids }}

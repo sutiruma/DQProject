@@ -62,11 +62,11 @@ _utils_path = os.path.join(os.path.dirname(__file__), "contract_utils.py")
 _spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
 _mod  = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
-extract_target_info     = _mod.extract_target_info
-is_valid_draft_id       = _mod.is_valid_draft_id
+extract_target_info = _mod.extract_target_info
+is_valid_draft_id = _mod.is_valid_draft_id
 get_draft_contract_info = _mod.get_draft_contract_info
-_YAML_AVAILABLE         = _mod._YAML_AVAILABLE
-get_bearer_token        = _mod.get_bearer_token
+_YAML_AVAILABLE = _mod._YAML_AVAILABLE
+get_bearer_token = _mod.get_bearer_token
 
 
 def get_dph_client(cpd_url: str, bearer_token: str):

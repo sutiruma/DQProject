@@ -130,7 +130,7 @@ jobs:
           username:     ${{ secrets.PLATFORM_USERNAME }}
           password:     ${{ secrets.PLATFORM_PASSWORD }}
           account-id:   ${{ secrets.PLATFORM_ACCOUNT_ID }}
-          iam-url:       ${{ secrets.IAM_TOKEN_URL }}
+          iam-url:      ${{ secrets.IAM_TOKEN_URL }}
           pr-number:    ${{ github.event.pull_request.number }}
           repository:   ${{ github.repository }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -182,6 +182,6 @@ jobs:
           username:     ${{ secrets.PLATFORM_USERNAME }}
           password:     ${{ secrets.PLATFORM_PASSWORD }}
           account-id:   ${{ secrets.PLATFORM_ACCOUNT_ID }}
-          iam-url:       ${{ secrets.IAM_TOKEN_URL }}
+          iam-url:      ${{ secrets.IAM_TOKEN_URL }}
           repository:   ${{ github.repository }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
