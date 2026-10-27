@@ -62,11 +62,91 @@ _utils_path = os.path.join(os.path.dirname(__file__), "contract_utils.py")
 _spec = importlib.util.spec_from_file_location("contract_utils", _utils_path)
 _mod  = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
-extract_project_id      = _mod.extract_project_id
-get_bearer_token        = _mod.get_bearer_token
 extract_target_info     = _mod.extract_target_info
 is_valid_draft_id       = _mod.is_valid_draft_id
 get_draft_contract_info = _mod.get_draft_contract_info
+_YAML_AVAILABLE         = _mod._YAML_AVAILABLE
+get_bearer_token        = _mod.get_bearer_token
+
+
+def get_dph_client(cpd_url: str, bearer_token: str):
+    """Create and return a configured DphV1 client."""
+    from wxdi.dph_services import DphV1
+    from ibm_cloud_sdk_core.authenticators import BearerTokenAuthenticator
+
+    raw_token = bearer_token.replace("Bearer ", "").strip()
+    authenticator = BearerTokenAuthenticator(raw_token)
+    dph = DphV1(authenticator=authenticator)
+    dph.set_service_url(cpd_url)
+    return dph
+
+
+def get_dph_catalog_id(dph) -> str:
+    """Fetch the default Data Product Hub catalog ID via DphV1.get_initialize_status().
+
+    Extracts the catalog ID from the container.id query parameter in the
+    response href. Raises RuntimeError when DPH is unavailable or not yet
+    initialized — initialization is an operator responsibility and must not
+    be triggered automatically by CI.
+    """
+    from urllib.parse import urlparse, parse_qs
+    from ibm_cloud_sdk_core.api_exception import ApiException
+
+    try:
+        resp = dph.get_initialize_status()
+        res = resp.get_result() if hasattr(resp, "get_result") else resp.result
+    except ApiException as exc:
+        raise RuntimeError(
+            f"DPH status check failed (status={exc.status_code}): {exc.message}. "
+            "Ensure the PLATFORM_URL points to a fully initialized DPH instance."
+        ) from exc
+
+    status = res.get("status", "")
+    if status != "succeeded":
+        raise RuntimeError(
+            f"DPH initialization has not succeeded (status={status!r}). "
+            "Ensure the DPH instance is fully initialized before running contracts."
+        )
+
+    # Extract catalog ID from container.id query param in href
+    href = res.get("href", "")
+    catalog_id = parse_qs(urlparse(href).query).get("container.id", [None])[0]
+    if not catalog_id:
+        raise RuntimeError(f"DPH catalog container ID not found in href: {href!r}")
+
+    return catalog_id
+
+
+def link_contract_to_data_product_draft(dph, draft_id: str, contract_terms_id: str, contract_id: str, data_product_id: str = "-"):
+    """Link data contract to draft contract terms using an 'add' JSON patch."""
+    from wxdi.dph_services.dph_v1 import JsonPatchOperation
+
+    print(f"  Linking contract {contract_id} to draft {draft_id} (contract_terms_id: {contract_terms_id}) ...")
+    patch_op = JsonPatchOperation(op="add", path="/data_contract_id", value=contract_id)
+    dph.update_data_product_draft_contract_terms(
+        data_product_id=data_product_id,
+        draft_id=draft_id,
+        contract_terms_id=contract_terms_id,
+        json_patch_instructions=[patch_op],
+    )
+    print(f"  Successfully linked data_contract_id={contract_id} to draft {draft_id}")
+
+
+def parse_contract_content(content: str) -> dict:
+    """Parse contract file content (JSON or YAML) into a dict."""
+    try:
+        doc = json.loads(content)
+    except json.JSONDecodeError:
+        if not _YAML_AVAILABLE:
+            raise RuntimeError(
+                "Contract file is not valid JSON and PyYAML is not installed — "
+                "install pyyaml to support YAML contract files."
+            )
+        import yaml
+        doc = yaml.safe_load(content)
+    if not isinstance(doc, dict):
+        raise RuntimeError("Contract file did not parse to an object")
+    return doc
 
 
 def _get_catalog_dc_type(dc) -> str:
