@@ -59,6 +59,6 @@ customProperties:
     value: 'true'
   - property: connectionIds
     value:
-      - 01a1794d-e7a2-72b7-83ad-dfb2416ea1fe
+      - 01a176fd-32a0-7235-9cae-0b391df46649
   - property: projectId
-    value: c08ca039-9f4c-4bfe-90d2-18200777c379
+    value: f522068d-7eee-42d4-8cac-d988a3790794
