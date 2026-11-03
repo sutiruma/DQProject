@@ -3,7 +3,7 @@ schema:
     physicalName: AI_MORTGAGE/HOUSE_PRICE
     name: HOUSE_PRICE
     physicalType: application/x-ibm-rel-table
-    description: description
+    description: description 
     properties:
       - logicalType: string
         physicalName: FORM_ID
@@ -70,6 +70,6 @@ customProperties:
   - property: isDPH
     value: true
   - property: draftId
-    value: 01a14422-19d6-7636-adca-8f8c7bec8d63@019fd294-95dc-71bf-88be-e51acedea238
+    value: 01a1a088-faf8-7453-8821-4874b4581ee7@019fd294-95dc-71bf-88be-e51acedea238
   - property: type
     value: contract
