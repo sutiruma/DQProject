@@ -1,0 +1,136 @@
+schema:
+  - physicalName: BANKING/CREDIT_SCORE
+    name: CREDIT_SCORE
+    id: fc28bf51-bc41-4665-ae90-38fac708128e
+    properties:
+      - logicalType: string
+        physicalName: ID
+        name: ID
+        physicalType: VARCHAR(7)
+        id: 88b4a07f-b190-4bb6-9224-e5453bf06c00
+        required: false
+      - logicalType: string
+        physicalName: NAME
+        name: NAME
+        physicalType: VARCHAR(22)
+        id: 9dc11ce6-84b4-42f3-a4ce-b9275b591f34
+        required: false
+      - logicalType: string
+        physicalName: STREET_ADDRESS
+        name: STREET_ADDRESS
+        physicalType: VARCHAR(34)
+        id: be0299e5-cb98-4273-994a-ad88a3e70981
+        required: false
+      - logicalType: string
+        physicalName: CITY
+        name: CITY
+        physicalType: VARCHAR(19)
+        id: 500d9db1-34c7-4262-888c-4be5a54cfe80
+        required: false
+      - logicalType: string
+        physicalName: STATE
+        name: STATE
+        physicalType: VARCHAR(14)
+        id: 880adcca-9a93-43e4-96c6-7288f73b28d1
+        required: false
+      - logicalType: string
+        physicalName: STATE_CODE
+        name: STATE_CODE
+        physicalType: VARCHAR(5)
+        id: 8d17a166-8e22-4a3e-af41-a7457b84583b
+        required: false
+      - logicalType: integer
+        physicalName: ZIP_CODE
+        name: ZIP_CODE
+        physicalType: INTEGER(10)
+        id: a9261fff-6ac0-45dd-a792-bc29283a6040
+        required: false
+      - logicalType: string
+        physicalName: EMAIL_ADDRESS
+        name: EMAIL_ADDRESS
+        physicalType: VARCHAR(35)
+        id: 1e437e22-7fec-49ab-82bc-f18458cabb6d
+        required: false
+      - logicalType: integer
+        physicalName: CREDIT_SCORE
+        name: CREDIT_SCORE
+        physicalType: SMALLINT(5)
+        id: b15c01e5-221f-48ea-83f9-fd5352861ac1
+        required: false
+      - logicalType: string
+        physicalName: OPTYPE
+        name: OPTYPE
+        physicalType: VARCHAR(255)
+        id: e8e04aef-9dcf-4df8-b057-d2f8fd379270
+        required: false
+      - logicalType: integer
+        physicalName: SEQUENCE
+        name: SEQUENCE
+        physicalType: BIGINT(19)
+        id: 1bb2150b-05e3-47e4-9f26-61c954b01ab5
+        required: true
+      - logicalType: timestamp
+        physicalName: TIMESTAMP
+        name: TIMESTAMP
+        physicalType: TIMESTAMP(26)
+        id: df33778d-1706-4885-9e64-56ce5a425bb1
+        required: true
+      - logicalType: integer
+        physicalName: TRANSACTION_ID
+        name: TRANSACTION_ID
+        physicalType: BIGINT(19)
+        id: 9fde3539-3bc5-4aa5-aadb-a640a4bdfbd9
+        required: true
+    quality:
+      - query: SELECT * FROM "BANKING"."CREDIT_SCORE" WHERE "ID" IS NULL;
+        name: check_id_null
+        description: check if id is null
+        mustBe: 0
+        id: 90e3c04f-bbeb-4ecf-8199-f03b208b8853
+        type: sql
+contractCreatedTs: '2026-11-11T09:18:48.759Z'
+kind: DataContract
+description:
+  purpose: test
+  usage: test
+  limitations: test
+team:
+  members: []
+  name: team1
+  description: test
+  id: team1
+version: 1.0.0
+slaProperties: []
+apiVersion: v3.1.0
+servers:
+  - schema: BANKING
+    server: ibm_db2_server1
+    environment: production
+    database: BLUDB
+    port: 50001
+    host: db2w-ruggyab.us-south.db2w.cloud.ibm.com
+    description: test
+    id: 019d0054-bbde-7742-95c3-db2bcce11c42
+    type: db2
+price:
+  priceUnit: MB
+  priceCurrency: USD
+  id: d61c051f-0f56-4f6e-9a2b-6caa5a785d5b
+  priceAmount: 3434
+domain: cbcadf1a-d9f0-425b-8199-6a7cce8b2f04
+name: test contract text2sql
+id: 57cecf7b-c4fd-4a61-abdc-01b5a43068df
+support: []
+status: draft
+customProperties:
+  - property: projectId
+    value: c8dd139d-5bd7-41cb-9147-55a7100632f0
+  - property: connectionIds
+    value:
+      - 019ff56d-cc21-70c0-8d98-9c8e3d90ea81
+  - property: isDPH
+    value: true
+  - property: draftId
+    value: 01a1cfc4-5163-7127-90e3-a6e197c3e0fe@019fd294-95dc-71bf-88be-e51acedea238
+  - property: type
+    value: contract
