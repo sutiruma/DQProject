@@ -1,0 +1,322 @@
+name: 'ODCS Contract Action'
+description: 'Validate, create, test, delete and save results of data contracts in a CPD / watsonx project.'
+author: 'Akshay Kumar H C, Thomas Jerard, sutiruma'
+
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  command:
+    description: "Operation to run: 'validate', 'create', 'test', 'delete' or 'save-results'"
+    required: true
+  url:
+    description: 'CPD / watsonx base URL'
+    required: true
+  api-key:
+    description: 'IBM Cloud IAM API key'
+    required: true
+  github-token:
+    description: 'GitHub token for posting PR comments / reading artifacts'
+    required: true
+  repository:
+    description: 'Repository in owner/repo format'
+    required: false
+    default: ${{ github.repository }}
+  changed-files:
+    description: "Space-separated list of changed contract file paths (commands: 'validate', 'create')"
+    required: false
+    default: ''
+  contract-ids:
+    description: "Space-separated list of project_id:contract_id pairs (commands: 'test', 'delete', 'save-results')"
+    required: false
+    default: ''
+  mode:
+    description: "'pr' (ephemeral contract) or 'merge' (upsert real contract) — command 'create' only"
+    required: false
+    default: 'pr'
+  pr-number:
+    description: 'Pull request number to comment on / name ephemeral contracts after'
+    required: false
+    default: ''
+
+outputs:
+  overall:
+    description: "'validate' / 'test': 0 = all passed, 1 = one or more failures"
+    value: ${{ steps.validate.outputs.overall || steps.test.outputs.overall }}
+  body:
+    description: 'Markdown summary of the results'
+    value: ${{ steps.validate.outputs.body || steps.create.outputs.body || steps.test.outputs.body }}
+  contract-ids:
+    description: "'create': space-separated list of project_id:contract_id pairs"
+    value: ${{ steps.create.outputs.contract_ids }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check command
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.command }}
+      run: |
+        case "$COMMAND" in
+          validate|create|test|delete|save-results) ;;
+          *) echo "::error::Unknown command '$COMMAND'. Use validate, create, test, delete or save-results."; exit 1 ;;
+        esac
+
+    - name: Install data-intelligence-sdk
+      shell: bash
+      run: |
+        pip install \
+          --index-url https://test.pypi.org/simple/ \
+          --extra-index-url https://pypi.org/simple/ \
+          "data-intelligence-sdk==2.3.0"
+
+    # ── validate ───────────────────────────────────────────────────────────────
+    - name: Validate contracts
+      id: validate
+      if: inputs.command == 'validate'
+      shell: bash
+      env:
+        PLATFORM_URL:     ${{ inputs.url }}
+        PLATFORM_API_KEY: ${{ inputs.api-key }}
+        CHANGED_FILES:    ${{ inputs.changed-files }}
+      run: |
+        RESULT_MD="## 🔍 Data Contract Validation\n\n"
+        OVERALL=0
+
+        for f in $CHANGED_FILES; do
+          echo "Validating $f ..."
+          if python3 "${{ github.action_path }}/.github/scripts/validate_contract.py" "$f" > /tmp/val_out.txt 2>&1; then
+            RESULT_MD+="### ✅ \`$f\` — valid\n\n"
+          else
+            OVERALL=1
+            ERRORS=$(cat /tmp/val_out.txt)
+            RESULT_MD+="### ❌ \`$f\` — validation failed\n\n\`\`\`\n${ERRORS}\n\`\`\`\n\n"
+          fi
+        done
+
+        echo "body<<EOF" >> $GITHUB_OUTPUT
+        printf "%b" "$RESULT_MD" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        echo "overall=$OVERALL" >> $GITHUB_OUTPUT
+
+    - name: Post validation PR comment
+      if: inputs.command == 'validate' && inputs.pr-number != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BODY:     ${{ steps.validate.outputs.body }}
+        PR:       ${{ inputs.pr-number }}
+        REPO:     ${{ inputs.repository }}
+      run: |
+        printf "%b" "$BODY" > /tmp/pr_body.md
+        gh pr comment "$PR" --body-file /tmp/pr_body.md --repo "$REPO"
+
+    - name: Fail if validation failed
+      if: inputs.command == 'validate' && steps.validate.outputs.overall == '1'
+      shell: bash
+      run: exit 1
+
+    # ── create ─────────────────────────────────────────────────────────────────
+    - name: Create contracts
+      id: create
+      if: inputs.command == 'create'
+      shell: bash
+      env:
+        PLATFORM_URL:     ${{ inputs.url }}
+        PLATFORM_API_KEY: ${{ inputs.api-key }}
+        MODE:             ${{ inputs.mode }}
+        PR:               ${{ inputs.pr-number }}
+        CHANGED_FILES:    ${{ inputs.changed-files }}
+      run: |
+        python3 "${{ github.action_path }}/.github/scripts/create_contract.py" \
+          --mode "$MODE" \
+          --pr-number "$PR" \
+          $CHANGED_FILES
+
+    - name: Post create PR comment (success)
+      if: inputs.command == 'create' && success() && inputs.pr-number != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BODY:     ${{ steps.create.outputs.body }}
+        PR:       ${{ inputs.pr-number }}
+        REPO:     ${{ inputs.repository }}
+      run: |
+        printf "%b" "$BODY" > /tmp/pr_body.md
+        gh pr comment "$PR" --body-file /tmp/pr_body.md --repo "$REPO"
+
+    - name: Post create PR comment (failure)
+      if: inputs.command == 'create' && failure() && inputs.pr-number != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR:       ${{ inputs.pr-number }}
+        REPO:     ${{ inputs.repository }}
+      run: |
+        cat > /tmp/pr_body.md <<'MDEOF'
+        ## ❌ Data Contract Create — failed
+
+        ```
+        See the workflow logs for the full error output.
+        ```
+        MDEOF
+        gh pr comment "$PR" --body-file /tmp/pr_body.md --repo "$REPO"
+
+    # ── test ───────────────────────────────────────────────────────────────────
+    - name: Trigger and poll test runs
+      id: test
+      if: inputs.command == 'test'
+      shell: bash
+      env:
+        PLATFORM_URL:     ${{ inputs.url }}
+        PLATFORM_API_KEY: ${{ inputs.api-key }}
+        RESULTS_DIR:      ${{ github.workspace }}/test-results
+        CONTRACT_IDS:     ${{ inputs.contract-ids }}
+      run: |
+        python3 "${{ github.action_path }}/.github/scripts/test_contract.py" $CONTRACT_IDS
+
+    - name: Upload test result JSON
+      id: upload
+      if: always() && inputs.command == 'test'
+      uses: actions/upload-artifact@v4
+      with:
+        name: data-contract-test-results-pr-${{ inputs.pr-number }}
+        path: ${{ github.workspace }}/test-results/*.json
+        if-no-files-found: ignore
+        overwrite: true
+
+    - name: Post test PR comment (success)
+      if: inputs.command == 'test' && success() && inputs.pr-number != ''
+      shell: bash
+      env:
+        GH_TOKEN:     ${{ inputs.github-token }}
+        BODY:         ${{ steps.test.outputs.body }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        PR:           ${{ inputs.pr-number }}
+        REPO:         ${{ inputs.repository }}
+      run: |
+        printf "%b" "$BODY" > /tmp/pr_body.md
+        if [ -n "$ARTIFACT_URL" ]; then
+          printf '\n📎 [Download test result JSON](%s)\n' "$ARTIFACT_URL" >> /tmp/pr_body.md
+        fi
+        gh pr comment "$PR" --body-file /tmp/pr_body.md --repo "$REPO"
+
+    - name: Post test PR comment (failure)
+      if: inputs.command == 'test' && failure() && inputs.pr-number != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR:       ${{ inputs.pr-number }}
+        REPO:     ${{ inputs.repository }}
+      run: |
+        cat > /tmp/pr_body.md <<'MDEOF'
+        ## ❌ Data Contract Test — failed
+
+        ```
+        See the workflow logs for the full error output.
+        ```
+        MDEOF
+        gh pr comment "$PR" --body-file /tmp/pr_body.md --repo "$REPO"
+
+    - name: Fail if test failed
+      if: inputs.command == 'test' && steps.test.outputs.overall == '1'
+      shell: bash
+      run: exit 1
+
+    # ── delete ─────────────────────────────────────────────────────────────────
+    - name: Delete ephemeral contracts
+      id: delete
+      if: inputs.command == 'delete'
+      shell: bash
+      env:
+        PLATFORM_URL:     ${{ inputs.url }}
+        PLATFORM_API_KEY: ${{ inputs.api-key }}
+        CONTRACT_IDS:     ${{ inputs.contract-ids }}
+      run: |
+        python3 "${{ github.action_path }}/.github/scripts/delete_contract.py" $CONTRACT_IDS
+
+    - name: Post delete PR comment (deleted)
+      if: inputs.command == 'delete' && success() && inputs.pr-number != ''
+      shell: bash
+      env:
+        GH_TOKEN:     ${{ inputs.github-token }}
+        CONTRACT_IDS: ${{ inputs.contract-ids }}
+        PR:           ${{ inputs.pr-number }}
+        REPO:         ${{ inputs.repository }}
+      run: |
+        COUNT=$(echo $CONTRACT_IDS | wc -w | tr -d ' ')
+        cat > /tmp/pr_body.md <<EOF
+        ## 🗑️ Ephemeral Contracts Cleaned Up
+
+        $COUNT ephemeral contract(s) deleted after PR validation.
+
+        \`\`\`
+        $CONTRACT_IDS
+        \`\`\`
+        EOF
+        gh pr comment "$PR" --body-file /tmp/pr_body.md --repo "$REPO"
+
+    - name: Post delete PR comment (failed)
+      if: inputs.command == 'delete' && failure() && inputs.pr-number != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR:       ${{ inputs.pr-number }}
+        REPO:     ${{ inputs.repository }}
+      run: |
+        cat > /tmp/pr_body.md <<'MDEOF'
+        ## ⚠️ Ephemeral Contract Cleanup — failed
+
+        One or more ephemeral contracts could not be deleted.
+        Please remove them manually from the project.
+
+        ```
+        See the workflow logs for the full error output.
+        ```
+        MDEOF
+        gh pr comment "$PR" --body-file /tmp/pr_body.md --repo "$REPO"
+
+    # ── save-results ───────────────────────────────────────────────────────────
+    - name: Download test results from the merged PR
+      id: download
+      if: inputs.command == 'save-results'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO:     ${{ inputs.repository }}
+        SHA:      ${{ github.sha }}
+      run: |
+        PR=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number // empty')
+        if [ -z "$PR" ]; then
+          echo "No pull request is associated with $SHA — nothing to save."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        ARTIFACT_ID=$(gh api "repos/$REPO/actions/artifacts?name=data-contract-test-results-pr-$PR" \
+          --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')
+        if [ -z "$ARTIFACT_ID" ]; then
+          echo "No unexpired test-result artifact found for PR #$PR — nothing to save."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Using artifact $ARTIFACT_ID from PR #$PR"
+        gh api "repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip" > "$RUNNER_TEMP/test-results.zip"
+        mkdir -p "$RUNNER_TEMP/test-results"
+        unzip -o -q "$RUNNER_TEMP/test-results.zip" -d "$RUNNER_TEMP/test-results"
+        echo "found=true" >> "$GITHUB_OUTPUT"
+
+    - name: Save test results to the contracts
+      if: inputs.command == 'save-results' && steps.download.outputs.found == 'true'
+      shell: bash
+      env:
+        PLATFORM_URL:     ${{ inputs.url }}
+        PLATFORM_API_KEY: ${{ inputs.api-key }}
+        CONTRACT_IDS:     ${{ inputs.contract-ids }}
+      run: |
+        python3 "${{ github.action_path }}/.github/scripts/save_test_results.py" \
+          --results-dir "$RUNNER_TEMP/test-results" \
+          $CONTRACT_IDS
