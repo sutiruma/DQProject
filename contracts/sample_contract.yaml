@@ -122,7 +122,6 @@ name: test contract text2sql
 id: 57cecf7b-c4fd-4a61-abdc-01b5a43068df
 support: []
 status: draft
-description: description 
 customProperties:
   - property: projectId
     value: c8dd139d-5bd7-41cb-9147-55a7100632f0
