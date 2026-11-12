@@ -1,6 +1,6 @@
 name: 'ODCS Contract Action'
 description: 'Validate, create, test, delete and save results of data contracts in a CPD / watsonx project.'
-author: 'Thomas Jerard'
+author: 'Akshay Kumar H C, Thomas Jerard, sutiruma'
 
 branding:
   icon: 'check-circle'
